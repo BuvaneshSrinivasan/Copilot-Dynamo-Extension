@@ -1,0 +1,45 @@
+# Build outputs
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# NuGet packages
+packages/
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Visual Studio temp files
+*.userprefs
+*.usertasks
+*.pidb
+*.svclog
+*.scc
+
+# Rider
+.idea/
+
+# Roslyn cache
+*.cache
+
+# Published web/WinForms
+publish/
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin
+$RECYCLE.BIN/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log

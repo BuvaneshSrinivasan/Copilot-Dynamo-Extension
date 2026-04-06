@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>10</LangVersion>
+    <RootNamespace>DynamoCopilot.GraphInterop</RootNamespace>
+    <AssemblyName>DynamoCopilot.GraphInterop</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Dynamo SDK references (private assets = don't copy transitively) -->
+  <ItemGroup>
+    <PackageReference Include="DynamoVisualProgramming.Core" Version="2.19.4" PrivateAssets="all" />
+    <PackageReference Include="DynamoVisualProgramming.WpfUILibrary" Version="2.19.4" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DynamoCopilot.Core\DynamoCopilot.Core.csproj" />
+  </ItemGroup>
+
+</Project>

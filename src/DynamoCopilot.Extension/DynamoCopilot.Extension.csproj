@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>10</LangVersion>
+    <RootNamespace>DynamoCopilot.Extension</RootNamespace>
+    <AssemblyName>DynamoCopilot.Extension</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DynamoVisualProgramming.Core" Version="2.19.4" PrivateAssets="all" />
+    <PackageReference Include="DynamoVisualProgramming.WpfUILibrary" Version="2.19.4" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DynamoCopilot.Core\DynamoCopilot.Core.csproj" />
+    <ProjectReference Include="..\DynamoCopilot.GraphInterop\DynamoCopilot.GraphInterop.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="DynamoCopilot_ViewExtensionDefinition.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>
