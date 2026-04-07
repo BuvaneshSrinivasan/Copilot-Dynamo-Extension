@@ -208,7 +208,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
                 if (node != null)
                 {
-                    GraphChangeCommands.UpdatePythonNodeScript(model, node, code);
+                    GraphChangeCommands.UpdatePythonNodeScript(model, node, code, wsVm);
                     ShowStatus("Code inserted. Double-click the Python node to see updated code.");
                 }
                 else
@@ -248,6 +248,40 @@ namespace DynamoCopilot.Extension.ViewModels
                     win.Close();
             }
             catch { }
+        }
+
+        public async Task FixPythonErrorAsync()
+        {
+            if (IsStreaming) return;
+
+            try
+            {
+                var wsVm = GetCurrentWorkspaceViewModel();
+                var node = PythonNodeInterop.GetSelectedPythonNode(wsVm);
+                if (node == null)
+                {
+                    ShowStatus("Select a Python Script node first.");
+                    return;
+                }
+
+                var error = PythonNodeInterop.GetNodeError(node);
+                if (string.IsNullOrWhiteSpace(error))
+                {
+                    ShowStatus("No error detected on the selected Python node.");
+                    return;
+                }
+
+                var code = PythonNodeInterop.GetScriptContent(node);
+                var message = string.IsNullOrWhiteSpace(code)
+                    ? $"The Python Script node returned this error:\n\n{error}\n\nPlease provide a fix."
+                    : $"The Python Script node returned this error:\n\n{error}\n\nHere is the current code:\n```python\n{code}\n```\n\nPlease fix the error.";
+
+                await SendMessageAsync(message);
+            }
+            catch (Exception ex)
+            {
+                ShowStatus($"Could not read error: {ex.Message}");
+            }
         }
 
         public void CopyToClipboard(string text)

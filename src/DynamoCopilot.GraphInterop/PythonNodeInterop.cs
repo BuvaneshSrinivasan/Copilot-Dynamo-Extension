@@ -117,6 +117,65 @@ namespace DynamoCopilot.GraphInterop
         }
 
         /// <summary>
+        /// Returns the error or warning text from a Python node's last execution,
+        /// or an empty string if the node is healthy or the state cannot be read.
+        /// Tries NodeInfos (Dynamo 2.13+) then ToolTipText as a fallback.
+        /// </summary>
+        public static string GetNodeError(object pythonNodeModel)
+        {
+            if (pythonNodeModel == null) return string.Empty;
+
+            try
+            {
+                // Only read error text when the node is actually in a Warning/Error state
+                var stateProp = pythonNodeModel.GetType()
+                    .GetProperty("State", BindingFlags.Public | BindingFlags.Instance);
+                if (stateProp != null)
+                {
+                    var stateStr = stateProp.GetValue(pythonNodeModel)?.ToString() ?? string.Empty;
+                    // ElementState enum values: Active, Dead, Warning, Error
+                    if (stateStr != "Warning" && stateStr != "Error")
+                        return string.Empty;
+                }
+
+                // Try NodeInfos collection (Dynamo 2.13+)
+                var nodeInfosProp = pythonNodeModel.GetType()
+                    .GetProperty("NodeInfos", BindingFlags.Public | BindingFlags.Instance);
+                if (nodeInfosProp != null)
+                {
+                    var infos = nodeInfosProp.GetValue(pythonNodeModel) as System.Collections.IEnumerable;
+                    if (infos != null)
+                    {
+                        var messages = new System.Collections.Generic.List<string>();
+                        foreach (var info in infos)
+                        {
+                            if (info == null) continue;
+                            var raw = info.ToString() ?? string.Empty;
+                            const string prefix = "Message: ";
+                            var idx = raw.IndexOf(prefix, StringComparison.Ordinal);
+                            var msg = idx >= 0
+                                ? raw.Substring(idx + prefix.Length).Trim()
+                                : raw.Trim();
+                            if (!string.IsNullOrWhiteSpace(msg))
+                                messages.Add(msg);
+                        }
+                        if (messages.Count > 0)
+                            return string.Join("\n", messages);
+                    }
+                }
+
+                // Fallback: ToolTipText (older Dynamo versions)
+                var tooltipProp = pythonNodeModel.GetType()
+                    .GetProperty("ToolTipText", BindingFlags.Public | BindingFlags.Instance);
+                return tooltipProp?.GetValue(pythonNodeModel) as string ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
         /// Returns the engine name of the Python node ("IronPython2", "CPython3", "PythonNet3").
         /// Returns "IronPython2" as a safe default if it cannot be determined.
         /// </summary>

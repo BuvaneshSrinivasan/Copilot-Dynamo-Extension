@@ -76,7 +76,7 @@ namespace DynamoCopilot.Core.Services
             };
 
             if (systemText != null)
-                requestDict["system_instruction"] = new { parts = new[] { new { text = systemText } } };
+                requestDict["systemInstruction"] = new { parts = new[] { new { text = systemText } } };
 
             var json = JsonSerializer.Serialize(requestDict);
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
