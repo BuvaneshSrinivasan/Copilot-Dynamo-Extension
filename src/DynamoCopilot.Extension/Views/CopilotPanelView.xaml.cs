@@ -84,6 +84,11 @@ namespace DynamoCopilot.Extension.Views
                 _viewModel.InsertCode(code);
         }
 
+        // ── Fix Python Error ──────────────────────────────────────────────
+
+        private async void OnFixErrorClick(object sender, RoutedEventArgs e)
+            => await _viewModel.FixPythonErrorAsync();
+
         // ── Clear ─────────────────────────────────────────────────────────
 
         private void OnClearClick(object sender, RoutedEventArgs e)

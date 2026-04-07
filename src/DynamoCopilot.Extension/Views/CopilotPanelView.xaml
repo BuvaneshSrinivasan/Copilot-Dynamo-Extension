@@ -848,6 +848,44 @@
                 BorderThickness="0,1,0,0"
                 Padding="8,8,8,6">
             <StackPanel>
+                <!-- Quick-action chips (hidden while streaming) -->
+                <WrapPanel Margin="0,0,0,6"
+                           Visibility="{Binding IsNotStreaming, Converter={StaticResource BoolToVis}}">
+                    <Button Content="⚠ Fix Python Error"
+                            FontSize="11"
+                            Padding="8,4"
+                            Margin="0,0,0,0"
+                            Click="OnFixErrorClick"
+                            Cursor="Hand"
+                            ToolTip="Read the error from the selected Python node and ask the AI to fix it">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#2D2020"/>
+                                <Setter Property="Foreground" Value="#F48771"/>
+                                <Setter Property="BorderBrush" Value="#5A3030"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    CornerRadius="12" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#3A2020"/>
+                                        <Setter Property="BorderBrush" Value="#F48771"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </WrapPanel>
                 <Border Background="{StaticResource BgInputBrush}"
                         BorderBrush="{StaticResource BorderBrush}"
                         BorderThickness="1"

@@ -30,7 +30,7 @@ namespace DynamoCopilot.Extension
             // Add a new top-level "Dynamo Co-pilot" menu tab to the Dynamo menu bar
             try
             {
-                var topMenu = new MenuItem { Header = "BimEra" };
+                var topMenu = new MenuItem { Header = "Copilot" };
 
                 _toggleMenuItem = new MenuItem { Header = "Dynamo Co-pilot" };
                 _toggleMenuItem.Click += OnTogglePanel;
@@ -39,16 +39,6 @@ namespace DynamoCopilot.Extension
                 loadedParams.dynamoMenu.Items.Add(topMenu);
             }
             catch { }
-
-            // Also add to the Extensions (star) sidebar menu as a fallback entry
-            // try
-            // {
-            //     loadedParams.AddExtensionMenuItem(new MenuItem
-            //     {
-            //         Header = "Show/Hide DynamoCopilot",
-            //     });
-            // }
-            // catch { }
         }
 
         public void Shutdown()

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Reflection;
 
 namespace DynamoCopilot.GraphInterop
@@ -22,18 +23,109 @@ namespace DynamoCopilot.GraphInterop
         /// <param name="dynamoModel">The DynamoModel instance (object to avoid hard ref).</param>
         /// <param name="pythonNodeModel">The PythonNode model returned by PythonNodeInterop.</param>
         /// <param name="code">New Python code to apply.</param>
-        public static bool UpdatePythonNodeScript(object dynamoModel, object pythonNodeModel, string code)
+        /// <param name="workspaceViewModel">The WorkspaceViewModel — used to clear the visual
+        /// ErrorBubble on the NodeViewModel directly, bypassing Dynamo's State-guard in
+        /// Logic_NodeMessagesClearing which skips clearing when State == Error.</param>
+        public static bool UpdatePythonNodeScript(object dynamoModel, object pythonNodeModel, string code,
+            object? workspaceViewModel = null)
         {
             if (dynamoModel == null || pythonNodeModel == null || code == null)
                 return false;
 
-            // 1. Call UpdateValue directly on the node — this is what UpdateModelValueCommand
-            //    does internally and avoids threading/dispatcher issues entirely.
-            if (TryDirectUpdateValue(pythonNodeModel, code))
-                return true;
+            // Delete the old node and recreate a fresh one at the same canvas position.
+            // Updating in place leaves Dynamo's internal Warning infos in the backing 'infos'
+            // field — ClearRuntimeError() (called before every run) intentionally skips
+            // Warning entries, so the old warning re-appears after any successful run.
+            // A fresh node has no history, no stale state, no stacking.
+            var newNode = RecreatePythonNode(dynamoModel, pythonNodeModel, code);
+            return newNode != null;
+        }
 
-            // 2. Fallback: direct property set + notify Dynamo
-            return PythonNodeInterop.SetScriptContent(pythonNodeModel, code);
+        /// <summary>
+        /// Deletes <paramref name="oldNodeModel"/> from the current workspace and creates a
+        /// brand-new PythonNode at the same canvas position with <paramref name="code"/> set.
+        /// This avoids all Dynamo internal warning/state accumulation that survives in-place
+        /// updates regardless of how aggressively we clear infos fields or ErrorBubble.
+        /// </summary>
+        private static object? RecreatePythonNode(object dynamoModel, object oldNodeModel, string code)
+        {
+            Debugger.Launch();
+            try
+            {
+                // 1. Capture canvas position before removing
+                double x = 0, y = 0;
+                try
+                {
+                    var xProp = oldNodeModel.GetType().GetProperty("X",
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                    var yProp = oldNodeModel.GetType().GetProperty("Y",
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                    if (xProp != null) x = Convert.ToDouble(xProp.GetValue(oldNodeModel));
+                    if (yProp != null) y = Convert.ToDouble(yProp.GetValue(oldNodeModel));
+                }
+                catch { }
+
+                // 2. Get the WorkspaceModel
+                var workspaceProp = dynamoModel.GetType()
+                    .GetProperty("CurrentWorkspace", BindingFlags.Public | BindingFlags.Instance);
+                var workspace = workspaceProp?.GetValue(dynamoModel);
+                if (workspace == null) return null;
+
+                // 3. Remove the old node.
+                // RemoveAndDisposeNode(NodeModel, bool undoEntry = true) — default params are
+                // invisible to reflection, so we must match the overload and supply every arg.
+                bool removed = false;
+                foreach (var name in new[] { "RemoveAndDisposeNode", "RemoveNode" })
+                {
+                    var flags = BindingFlags.Public | BindingFlags.NonPublic |
+                                BindingFlags.Instance | BindingFlags.FlattenHierarchy;
+                    foreach (var m in workspace.GetType().GetMethods(flags))
+                    {
+                        if (m.Name != name) continue;
+                        var prms = m.GetParameters();
+                        try
+                        {
+                            if (prms.Length == 1)
+                                m.Invoke(workspace, new[] { oldNodeModel });
+                            else if (prms.Length == 2)
+                                m.Invoke(workspace, new object[] { oldNodeModel, true });
+                            else
+                                continue;
+                            removed = true;
+                            break;
+                        }
+                        catch { }
+                    }
+                    if (removed) break;
+                }
+
+                // 4. Create a fresh node — no history, no stale warnings
+                var newNode = ExecuteCreateNodeCommand(dynamoModel, workspace, "PythonNodeModels.PythonNode");
+                if (newNode == null) return null;
+
+                // 5. Restore canvas position
+                try
+                {
+                    var xProp = newNode.GetType().GetProperty("X",
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                    var yProp = newNode.GetType().GetProperty("Y",
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                    xProp?.SetValue(newNode, x);
+                    yProp?.SetValue(newNode, y);
+                }
+                catch { }
+
+                // 6. Write the code to the fresh node
+                bool written = TryDirectUpdateValue(newNode, code);
+                if (!written)
+                    PythonNodeInterop.SetScriptContent(newNode, code);
+
+                return newNode;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         // -----------------------------------------------------------------
@@ -120,30 +212,40 @@ namespace DynamoCopilot.GraphInterop
         {
             try
             {
-                // Locate NodeFactory on the workspace
-                var factoryProp = workspace.GetType()
-                    .GetProperty("NodeFactory", BindingFlags.Public | BindingFlags.Instance);
-                var factory = factoryProp?.GetValue(workspace);
+                // NodeFactory lives on DynamoModel, not on WorkspaceModel
+                var factory = dynamoModel.GetType()
+                    .GetProperty("NodeFactory", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(dynamoModel);
+
                 if (factory == null) return null;
 
-                // NodeFactory.CreateNodeFromTypeName(string typeName) or CreateNodeByName
-                var createMethod = factory.GetType()
-                    .GetMethod("CreateNodeFromTypeName", BindingFlags.Public | BindingFlags.Instance)
-                    ?? factory.GetType()
-                        .GetMethod("CreateNodeByName", BindingFlags.Public | BindingFlags.Instance);
+                // NodeFactory.CreateNodeFromTypeName(string) — the standard API
+                var createMethod =
+                    factory.GetType().GetMethod("CreateNodeFromTypeName",
+                        BindingFlags.Public | BindingFlags.Instance)
+                    ?? factory.GetType().GetMethod("CreateNodeByName",
+                        BindingFlags.Public | BindingFlags.Instance);
 
                 if (createMethod == null) return null;
 
                 var node = createMethod.Invoke(factory, new object[] { nodeTypeName });
                 if (node == null) return null;
 
-                // Add node to workspace
-                var addNodeMethod = workspace.GetType()
-                    .GetMethod("AddAndSelectNode", BindingFlags.Public | BindingFlags.Instance)
-                    ?? workspace.GetType()
-                        .GetMethod("AddNode", BindingFlags.Public | BindingFlags.Instance);
+                // Add node to workspace — AddAndSelectNode(NodeModel) takes only the node
+                var addNodeMethod =
+                    workspace.GetType().GetMethod("AddAndSelectNode",
+                        BindingFlags.Public | BindingFlags.Instance)
+                    ?? workspace.GetType().GetMethod("AddNode",
+                        BindingFlags.Public | BindingFlags.Instance);
 
-                addNodeMethod?.Invoke(workspace, new[] { node, false });
+                if (addNodeMethod != null)
+                {
+                    var prms = addNodeMethod.GetParameters();
+                    if (prms.Length == 1)
+                        addNodeMethod.Invoke(workspace, new[] { node });
+                    else if (prms.Length == 2)
+                        addNodeMethod.Invoke(workspace, new object[] { node, false });
+                }
 
                 return node;
             }
