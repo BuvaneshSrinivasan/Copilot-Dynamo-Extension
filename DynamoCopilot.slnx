@@ -3,5 +3,6 @@
     <Project Path="src/DynamoCopilot.Core/DynamoCopilot.Core.csproj" />
     <Project Path="src/DynamoCopilot.Extension/DynamoCopilot.Extension.csproj" />
     <Project Path="src/DynamoCopilot.GraphInterop/DynamoCopilot.GraphInterop.csproj" />
+    <Project Path="src/DynamoCopilot.Server/DynamoCopilot.Server.csproj" />
   </Folder>
 </Solution>
