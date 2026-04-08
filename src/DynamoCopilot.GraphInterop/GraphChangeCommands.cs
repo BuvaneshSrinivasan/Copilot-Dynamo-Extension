@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Reflection;
 
 namespace DynamoCopilot.GraphInterop
@@ -22,6 +23,11 @@ namespace DynamoCopilot.GraphInterop
         /// <param name="dynamoModel">The DynamoModel instance (object to avoid hard ref).</param>
         /// <param name="pythonNodeModel">The PythonNode model returned by PythonNodeInterop.</param>
         /// <param name="code">New Python code to apply.</param>
+        /// <param name="workspaceViewModel">The WorkspaceViewModel — used to clear the visual
+        /// ErrorBubble on the NodeViewModel directly, bypassing Dynamo's State-guard in
+        /// Logic_NodeMessagesClearing which skips clearing when State == Error.</param>
+        public static bool UpdatePythonNodeScript(object dynamoModel, object pythonNodeModel, string code,
+            object? workspaceViewModel = null)
         /// <param name="workspaceViewModel">The WorkspaceViewModel — used to clear the visual
         /// ErrorBubble on the NodeViewModel directly, bypassing Dynamo's State-guard in
         /// Logic_NodeMessagesClearing which skips clearing when State == Error.</param>
