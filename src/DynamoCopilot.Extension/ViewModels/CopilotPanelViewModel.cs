@@ -14,7 +14,7 @@ using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.GraphInterop;
 
-// Provider index constants match AiProvider enum order: Groq=0, Gemini=1, OpenRouter=2, Ollama=3, OpenAI=4
+// Provider index constants match AiProvider enum order: Groq=0, Gemini=1, OpenRouter=2, Ollama=3, OpenAI=4, Server=5
 
 namespace DynamoCopilot.Extension.ViewModels
 {
@@ -330,19 +330,25 @@ namespace DynamoCopilot.Extension.ViewModels
                 var p = (AiProvider)value;
                 _settingsApiKey = GetSavedApiKey(p);
                 _settingsModel = GetSavedModel(p);
-                _settingsEndpoint = _settings.OllamaEndpoint;
+                _settingsEndpoint = p == AiProvider.Server ? _settings.ServerUrl : _settings.OllamaEndpoint;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(SettingsApiKey));
                 OnPropertyChanged(nameof(SettingsModel));
                 OnPropertyChanged(nameof(SettingsEndpoint));
                 OnPropertyChanged(nameof(IsOllama));
+                OnPropertyChanged(nameof(IsServer));
+                OnPropertyChanged(nameof(ShowEndpointField));
                 OnPropertyChanged(nameof(ApiKeyLabel));
                 OnPropertyChanged(nameof(ModelHint));
                 OnPropertyChanged(nameof(ProviderNote));
+                OnPropertyChanged(nameof(EndpointLabel));
             }
         }
 
         public bool IsOllama => _selectedProviderIndex == (int)AiProvider.Ollama;
+        public bool IsServer => _selectedProviderIndex == (int)AiProvider.Server;
+        /// <summary>True when the endpoint/URL field should be visible (Ollama or Server).</summary>
+        public bool ShowEndpointField => IsOllama || IsServer;
 
         public string SettingsApiKey
         {
@@ -372,7 +378,20 @@ namespace DynamoCopilot.Extension.ViewModels
                     case AiProvider.Gemini: return "Gemini API Key:";
                     case AiProvider.OpenRouter: return "OpenRouter API Key:";
                     case AiProvider.OpenAI: return "OpenAI API Key:";
+                    case AiProvider.Server: return "Auth Token:";
                     default: return "API Key:";
+                }
+            }
+        }
+
+        public string EndpointLabel
+        {
+            get
+            {
+                switch ((AiProvider)_selectedProviderIndex)
+                {
+                    case AiProvider.Server: return "Server URL:";
+                    default: return "Ollama Endpoint:";
                 }
             }
         }
@@ -388,6 +407,7 @@ namespace DynamoCopilot.Extension.ViewModels
                     case AiProvider.OpenRouter: return "e.g. meta-llama/llama-3.3-70b-instruct:free · google/gemma-3-27b-it:free";
                     case AiProvider.Ollama: return "e.g. llama3 · mistral · codellama (must be pulled first)";
                     case AiProvider.OpenAI: return "e.g. gpt-4o · gpt-4o-mini";
+                    case AiProvider.Server: return "Model is assigned automatically based on your plan.";
                     default: return string.Empty;
                 }
             }
@@ -404,6 +424,7 @@ namespace DynamoCopilot.Extension.ViewModels
                     case AiProvider.OpenRouter: return "Free models available · Get your key at openrouter.ai";
                     case AiProvider.Ollama: return "Completely free · Run locally with ollama.com";
                     case AiProvider.OpenAI: return "Paid account required · platform.openai.com";
+                    case AiProvider.Server: return "DynamoCopilot Cloud · Log in to get your auth token";
                     default: return string.Empty;
                 }
             }
@@ -414,15 +435,18 @@ namespace DynamoCopilot.Extension.ViewModels
             _selectedProviderIndex = (int)_settings.Provider;
             _settingsApiKey = GetSavedApiKey(_settings.Provider);
             _settingsModel = GetSavedModel(_settings.Provider);
-            _settingsEndpoint = _settings.OllamaEndpoint;
+            _settingsEndpoint = _settings.Provider == AiProvider.Server ? _settings.ServerUrl : _settings.OllamaEndpoint;
             OnPropertyChanged(nameof(SelectedProviderIndex));
             OnPropertyChanged(nameof(SettingsApiKey));
             OnPropertyChanged(nameof(SettingsModel));
             OnPropertyChanged(nameof(SettingsEndpoint));
             OnPropertyChanged(nameof(IsOllama));
+            OnPropertyChanged(nameof(IsServer));
+            OnPropertyChanged(nameof(ShowEndpointField));
             OnPropertyChanged(nameof(ApiKeyLabel));
             OnPropertyChanged(nameof(ModelHint));
             OnPropertyChanged(nameof(ProviderNote));
+            OnPropertyChanged(nameof(EndpointLabel));
             ShowSettings = true;
         }
 
@@ -439,6 +463,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 case AiProvider.OpenRouter:  _settings.OpenRouterApiKey = _settingsApiKey;  _settings.OpenRouterModel = _settingsModel;   break;
                 case AiProvider.Ollama:      _settings.OllamaEndpoint = _settingsEndpoint;  _settings.OllamaModel = _settingsModel;      break;
                 case AiProvider.OpenAI:      _settings.OpenAiApiKey = _settingsApiKey;      _settings.OpenAiModel = _settingsModel;      break;
+                case AiProvider.Server:      _settings.ServerUrl = _settingsEndpoint;       _settings.ServerAuthToken = _settingsApiKey; break;
             }
             _settings.Save();
             if (_llmService is IDisposable d) d.Dispose();
@@ -455,6 +480,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 case AiProvider.Gemini:     return _settings.GeminiApiKey;
                 case AiProvider.OpenRouter: return _settings.OpenRouterApiKey;
                 case AiProvider.OpenAI:     return _settings.OpenAiApiKey;
+                case AiProvider.Server:     return _settings.ServerAuthToken;
                 default:                    return string.Empty;
             }
         }
@@ -468,6 +494,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 case AiProvider.OpenRouter: return _settings.OpenRouterModel;
                 case AiProvider.Ollama:     return _settings.OllamaModel;
                 case AiProvider.OpenAI:     return _settings.OpenAiModel;
+                case AiProvider.Server:     return string.Empty;  // Model is server-assigned
                 default:                    return string.Empty;
             }
         }

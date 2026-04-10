@@ -37,6 +37,11 @@ namespace DynamoCopilot.Core.Services
                         "https://api.openai.com/v1",
                         settings.OpenAiApiKey,
                         settings.OpenAiModel);
+
+                case AiProvider.Server:
+                    return new ServerLlmService(
+                        settings.ServerUrl,
+                        settings.ServerAuthToken);
             }
         }
     }

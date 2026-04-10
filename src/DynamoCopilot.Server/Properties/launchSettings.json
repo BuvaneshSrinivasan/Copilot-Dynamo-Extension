@@ -1,0 +1,24 @@
+{
+  // launchSettings.json tells `dotnet run` how to start the app locally.
+  // This file is ONLY used during local development — it is NOT deployed to Railway.
+  // It sets environment variables that are active for the duration of the run.
+  //
+  // The critical one here is ASPNETCORE_ENVIRONMENT=Development, which:
+  //   1. Loads appsettings.Development.json (overrides appsettings.json)
+  //   2. Loads User Secrets (your secrets.json file with the API key)
+  //   3. Enables the developer exception page (detailed errors in Postman)
+  //
+  // Without this, the environment defaults to Production and user secrets are ignored.
+
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "DynamoCopilot.Server": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "applicationUrl": "http://localhost:8080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

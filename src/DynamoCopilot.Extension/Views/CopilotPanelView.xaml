@@ -537,6 +537,7 @@
                     <ComboBoxItem Content="OpenRouter  (Free models available)"/>
                     <ComboBoxItem Content="Ollama  (Local, completely free)"/>
                     <ComboBoxItem Content="OpenAI  (Paid)"/>
+                    <ComboBoxItem Content="DynamoCopilot Cloud  (Managed)"/>
                 </ComboBox>
 
                 <!-- Provider note -->
@@ -562,19 +563,19 @@
                              BorderThickness="1"/>
                 </StackPanel>
 
-                <!-- Ollama endpoint (shown only for Ollama) -->
+                <!-- Endpoint field (shown for Ollama and DynamoCopilot Cloud) -->
                 <StackPanel>
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsOllama}" Value="True">
+                                <DataTrigger Binding="{Binding ShowEndpointField}" Value="True">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <TextBlock Text="Ollama Endpoint" FontSize="11" Foreground="#8B8B8B" Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding EndpointLabel}" FontSize="11" Foreground="#8B8B8B" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding SettingsEndpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                              Background="#2D2D2D" Foreground="#D4D4D4" BorderBrush="#3A3A3A"
                              FontSize="12" Padding="6,5" Margin="0,0,0,12"

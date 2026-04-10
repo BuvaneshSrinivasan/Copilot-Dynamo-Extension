@@ -12,7 +12,8 @@ namespace DynamoCopilot.Core.Settings
         Gemini = 1,      // Free tier - Google Gemini models
         OpenRouter = 2,  // Many free models available
         Ollama = 3,      // Local, completely free
-        OpenAI = 4       // Paid - GPT-4o
+        OpenAI = 4,      // Paid - GPT-4o
+        Server = 5       // DynamoCopilot Cloud - model assigned by server based on plan
     }
 
     /// <summary>
@@ -63,6 +64,14 @@ namespace DynamoCopilot.Core.Settings
 
         [JsonPropertyName("ollamaModel")]
         public string OllamaModel { get; set; } = "llama3";
+
+        // ── DynamoCopilot Cloud (server proxy) ───────────────────────────
+        [JsonPropertyName("serverUrl")]
+        public string ServerUrl { get; set; } = string.Empty;
+
+        /// <summary>JWT issued by the DynamoCopilot server after OAuth login.</summary>
+        [JsonPropertyName("serverAuthToken")]
+        public string ServerAuthToken { get; set; } = string.Empty;
 
         [JsonPropertyName("maxHistoryMessages")]
         public int MaxHistoryMessages { get; set; } = 40;
