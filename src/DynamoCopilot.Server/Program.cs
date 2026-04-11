@@ -144,7 +144,10 @@ static string ResolveConnectionString(IConfiguration config)
                $"Username={userInfo[0]};" +
                $"Password={Uri.UnescapeDataString(userInfo[1])};" +
                $"Database={uri.AbsolutePath.TrimStart('/')};" +
-               $"SSL Mode=Require;" +
+               // Prefer: tries SSL first, falls back to plain TCP if unavailable.
+               // Railway's internal hostname (*.railway.internal) does not have SSL
+               // configured — Require would cause the connection to be refused.
+               $"SSL Mode=Prefer;" +
                $"Trust Server Certificate=true";
     }
 
