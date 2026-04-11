@@ -90,14 +90,23 @@ namespace DynamoCopilot.Core.Services
                 if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
 
                 var data = line.Substring("data: ".Length);
-                if (data == "[DONE]") yield break;
-
-                // Server sends JSON-encoded token strings: "hello" (with quotes)
+                // Server sends: {"type":"token","value":"..."} or {"type":"done"}
                 string? token = null;
-                try { token = JsonSerializer.Deserialize<string>(data); }
+                try
+                {
+                    using var doc = JsonDocument.Parse(data);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("type", out var typeEl))
+                    {
+                        var type = typeEl.GetString();
+                        if (type == "done") yield break;
+                        if (type == "token" && root.TryGetProperty("value", out var valueEl))
+                            token = valueEl.GetString();
+                    }
+                }
                 catch (JsonException) { }
 
-                if (token != null) yield return token;
+                if (!string.IsNullOrEmpty(token)) yield return token;
             }
         }
 
