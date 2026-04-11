@@ -51,6 +51,7 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
 // The middleware just populates HttpContext.User if a valid token is present.
 // ─────────────────────────────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
+    ?? Environment.GetEnvironmentVariable("JWT__SECRET")
     ?? throw new InvalidOperationException(
         "Jwt:Secret is not configured. " +
         "Set it in appsettings.Development.json (local) or as JWT__SECRET env var in Railway.");

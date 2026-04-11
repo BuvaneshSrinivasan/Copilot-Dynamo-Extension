@@ -23,9 +23,11 @@ public class TokenService
     {
         _secret = configuration["Jwt:Secret"] is { Length: > 0 } s
             ? s
-            : throw new InvalidOperationException(
-                "Jwt:Secret is not configured. " +
-                "Set it in appsettings.Development.json (local) or as JWT__SECRET env var in Railway.");
+            : Environment.GetEnvironmentVariable("JWT__SECRET") is { Length: > 0 } envSecret
+                ? envSecret
+                : throw new InvalidOperationException(
+                    "Jwt:Secret is not configured. " +
+                    "Set it in appsettings.Development.json (local) or as JWT__SECRET env var in Railway.");
 
         _issuer = configuration["Jwt:Issuer"] ?? "DynamoCopilot";
         _audience = configuration["Jwt:Audience"] ?? "DynamoCopilot";
