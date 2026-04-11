@@ -22,12 +22,14 @@ namespace DynamoCopilot.Server.Services;
 //          "candidatesTokenCount":2,"totalTokenCount":12}}
 //
 // The LAST chunk always contains "finishReason":"STOP" and the full usageMetadata.
-// [Phase 4 note] We'll capture usageMetadata there to enforce daily token limits.
+// We capture totalTokenCount from that chunk and write it into UsageTracker so
+// RateLimitMiddleware can update the user's daily token count after the stream ends.
 // =============================================================================
 
 public class GeminiService : ILlmService
 {
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly UsageTracker _usageTracker;
     private readonly string _apiKey;
     private readonly string _model;
     private readonly string _systemPrompt;
@@ -35,9 +37,10 @@ public class GeminiService : ILlmService
     // IConfiguration is ASP.NET Core's abstraction over ALL config sources:
     // appsettings.json, appsettings.Development.json, env vars, user secrets.
     // The framework injects it automatically — just declare it in the constructor.
-    public GeminiService(IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public GeminiService(IHttpClientFactory httpClientFactory, IConfiguration configuration, UsageTracker usageTracker)
     {
         _httpClientFactory = httpClientFactory;
+        _usageTracker = usageTracker;
 
         // The "?? throw" pattern: read config value or crash at startup with a clear message.
         // Much better than a NullReferenceException thrown mid-request with no context.
@@ -168,15 +171,15 @@ public class GeminiService : ILlmService
                 if (!string.IsNullOrEmpty(text))
                     yield return text;  // Send this token to the caller immediately
 
-                // ── [Phase 4 note] ────────────────────────────────────────────
-                // The last SSE chunk has finishReason:"STOP" and usageMetadata:
-                //   { "promptTokenCount": 120, "candidatesTokenCount": 45, "totalTokenCount": 165 }
-                //
-                // In Phase 4, we'll need to return this usage data to ChatEndpoints
-                // so it can update the user's DailyTokenCount in the database.
-                // We'll change the return type from IAsyncEnumerable<string> to a
-                // custom type that carries both tokens and final usage metadata.
-                // ─────────────────────────────────────────────────────────────
+                // The last chunk from Gemini includes usageMetadata with the total token count.
+                // We write it into UsageTracker so RateLimitMiddleware can update the DB
+                // after this method returns. UsageTracker is Scoped — the middleware and
+                // this service share the same instance within one HTTP request.
+                if (doc.RootElement.TryGetProperty("usageMetadata", out var usage) &&
+                    usage.TryGetProperty("totalTokenCount", out var totalTokens))
+                {
+                    _usageTracker.TotalTokens = totalTokens.GetInt32();
+                }
             }
         }
     }

@@ -1,63 +1,86 @@
 // =============================================================================
 // Program.cs — Application Entry Point
 // =============================================================================
-// Phase 2 additions vs Phase 1:
-//   - DbContext registration (connects EF Core to PostgreSQL)
-//   - Auto-migration on startup (creates/updates the DB schema on every deploy)
-//   - ResolveConnectionString helper (handles both local dev and Railway formats)
+// Phase 3 additions vs Phase 2:
+//   - JWT Bearer authentication setup
+//   - TokenService registration
+//   - UseAuthentication() + UseAuthorization() middleware
+//   - Auth endpoints mapped
 // =============================================================================
 
+using System.Text;
 using DynamoCopilot.Server.Data;
 using DynamoCopilot.Server.Endpoints;
+using DynamoCopilot.Server.Middleware;
 using DynamoCopilot.Server.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 // ── STEP 1: REGISTER SERVICES ─────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Railway sets PORT automatically. Without this, the app binds to the wrong port
-// and Railway's health checks fail.
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// IHttpClientFactory — reuses sockets to avoid socket exhaustion under load
 builder.Services.AddHttpClient();
-
-// AI provider — change this one line to swap to a different LLM in the future
 builder.Services.AddScoped<ILlmService, GeminiService>();
+builder.Services.AddScoped<TokenService>();
+
+// UsageTracker is Scoped so GeminiService and RateLimitMiddleware share the
+// same instance within one request — GeminiService writes, middleware reads.
+builder.Services.AddScoped<UsageTracker>();
 
 // DATABASE
-// AddDbContext registers AppDbContext as Scoped (one instance per HTTP request).
-// Scoped is the correct lifetime for DbContext — it should not be shared across requests
-// because it tracks changes in memory and is not thread-safe.
-//
-// UseNpgsql tells EF Core to use the Npgsql provider (PostgreSQL).
-// We pass the connection string via a helper function (see bottom of this file)
-// so that we handle both local development and Railway production formats.
 builder.Services.AddDbContext<AppDbContext>(opts =>
     opts.UseNpgsql(ResolveConnectionString(builder.Configuration)));
+
+// JWT AUTHENTICATION
+// ─────────────────────────────────────────────────────────────────────────────
+// AddAuthentication registers the authentication services and sets the default scheme.
+// "JwtBearer" means: look for a JWT in the "Authorization: Bearer {token}" header.
+//
+// AddJwtBearer tells ASP.NET Core HOW to validate a JWT:
+//   - Verify it was signed by us (using our secret key)
+//   - Verify it hasn't expired
+//   - Verify the issuer and audience match what we expect
+//
+// This does NOT protect any endpoints by itself.
+// Protection happens in the endpoint via .RequireAuthorization().
+// The middleware just populates HttpContext.User if a valid token is present.
+// ─────────────────────────────────────────────────────────────────────────────
+var jwtSecret = builder.Configuration["Jwt:Secret"]
+    ?? throw new InvalidOperationException(
+        "Jwt:Secret is not configured. " +
+        "Set it in appsettings.Development.json (local) or as JWT__SECRET env var in Railway.");
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(opts =>
+    {
+        opts.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,             // reject expired tokens
+            ValidateIssuerSigningKey = true,     // reject tampered tokens
+            ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "DynamoCopilot",
+            ValidAudience = builder.Configuration["Jwt:Audience"] ?? "DynamoCopilot",
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            // ClockSkew: allow 30 seconds of clock difference between server and client
+            // (default is 5 minutes, which is too generous)
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 // ── STEP 2: BUILD ─────────────────────────────────────────────────────────────
 
 var app = builder.Build();
 
 // ── AUTO-MIGRATE ON STARTUP ───────────────────────────────────────────────────
-// This block runs any pending EF Core migrations when the app starts.
-//
-// Why auto-migrate instead of running `dotnet ef database update` manually?
-//   - Railway restarts the container on every deploy
-//   - Running the migration at startup guarantees the schema is always in sync
-//   - EF Core migrations are idempotent (safe to run multiple times — they skip
-//     migrations that have already been applied)
-//
-// How it works:
-//   - EF Core keeps a "__EFMigrationsHistory" table in your database
-//   - On startup it checks which migrations are listed there
-//   - Any migration NOT in that table gets applied
-//
-// We create a temporary scope because DbContext is Scoped
-// (it can't be resolved from the root scope directly)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -65,58 +88,57 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ── STEP 3: MIDDLEWARE PIPELINE ───────────────────────────────────────────────
+//
+// MIDDLEWARE ORDER IS CRITICAL. The rules:
+//   1. UseDeveloperExceptionPage — must be first so it catches all exceptions
+//   2. UseAuthentication         — reads JWT from header, populates HttpContext.User
+//   3. UseAuthorization          — checks if the current user can access the endpoint
+//   4. [Phase 4] UseMiddleware<RateLimitMiddleware> — goes AFTER auth so we know who the user is
 
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
 
-// [Phase 3] UseAuthentication() and UseAuthorization() go here
-// [Phase 4] app.UseMiddleware<RateLimitMiddleware>() goes here
+// UseAuthentication: reads the "Authorization: Bearer {token}" header on every request.
+// If the token is valid, it sets HttpContext.User with the claims from the JWT.
+// If the token is missing or invalid, HttpContext.User is anonymous (not authenticated).
+// It does NOT reject the request — that's UseAuthorization's job.
+app.UseAuthentication();
+
+// UseAuthorization: for endpoints marked with .RequireAuthorization(), it checks
+// whether HttpContext.User is authenticated. If not → 401 Unauthorized.
+// For endpoints without .RequireAuthorization(), it does nothing.
+app.UseAuthorization();
+
+// Rate limiting runs AFTER auth so HttpContext.User is already populated with the
+// JWT claims. The middleware skips unauthenticated requests automatically.
+app.UseMiddleware<RateLimitMiddleware>();
 
 // ── ENDPOINTS ─────────────────────────────────────────────────────────────────
 
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
-    version = "2.0",
+    version = "3.0",
     timestamp = DateTime.UtcNow
 }));
 
-app.MapChatEndpoints();
-// [Phase 3] app.MapAuthEndpoints() goes here
-// [Phase 5] app.MapAdminEndpoints() goes here
+app.MapAuthEndpoints();   // POST /auth/register, /auth/login, /auth/refresh
+app.MapChatEndpoints();   // POST /api/chat/stream (now requires JWT)
+app.MapAdminEndpoints();  // GET+POST /admin/users/* (requires X-Admin-Key header)
 
 app.Run();
 
-// =============================================================================
-// HELPER: ResolveConnectionString
-// =============================================================================
-// Why do we need this?
-//
-// Local development uses a key-value connection string:
-//   "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=dynamocopilot_dev"
-//
-// Railway provides a full PostgreSQL URI in the DATABASE_URL environment variable:
-//   "postgresql://username:password@host.railway.internal:5432/railway"
-//
-// Npgsql (the PostgreSQL driver for .NET) supports both formats, but we need to
-// handle both cases and add SSL settings for Railway's managed database.
-// =============================================================================
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+
 static string ResolveConnectionString(IConfiguration config)
 {
-    // Railway sets DATABASE_URL automatically when you add a PostgreSQL addon.
-    // Check for it first — if it exists, we're running in production on Railway.
     var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
-
     if (!string.IsNullOrEmpty(databaseUrl))
     {
-        // Convert the URI format to Npgsql key-value format.
-        // URI: postgresql://alice:secret@db.railway.internal:5432/mydb
-        // Npgsql: Host=db.railway.internal;Port=5432;Username=alice;Password=secret;Database=mydb
         var uri = new Uri(databaseUrl);
         var userInfo = uri.UserInfo.Split(':', 2);
-
         return $"Host={uri.Host};" +
                $"Port={uri.Port};" +
                $"Username={userInfo[0]};" +
@@ -126,7 +148,6 @@ static string ResolveConnectionString(IConfiguration config)
                $"Trust Server Certificate=true";
     }
 
-    // Local development: read from ConnectionStrings:DefaultConnection in appsettings.Development.json
     return config.GetConnectionString("DefaultConnection")
         ?? throw new InvalidOperationException(
             "No database connection configured. " +

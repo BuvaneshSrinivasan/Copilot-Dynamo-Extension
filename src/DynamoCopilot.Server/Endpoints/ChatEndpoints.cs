@@ -22,9 +22,11 @@ public static class ChatEndpoints
 {
     public static void MapChatEndpoints(this WebApplication app)
     {
-        // Register the handler for POST /api/chat/stream.
-        // [Phase 3] Add .RequireAuthorization() here once JWT auth is configured.
-        app.MapPost("/api/chat/stream", HandleStreamAsync);
+        // .RequireAuthorization() means: reject requests without a valid JWT with 401.
+        // The JWT is read from the "Authorization: Bearer {token}" header.
+        // UseAuthorization() middleware in Program.cs is what actually enforces this.
+        app.MapPost("/api/chat/stream", HandleStreamAsync)
+           .RequireAuthorization();
     }
 
     // ASP.NET Core's Minimal API engine inspects this method's parameters and
