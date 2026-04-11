@@ -51,9 +51,17 @@ public class RateLimitMiddleware
         IConfiguration config,
         UsageTracker usageTracker)
     {
+        // ── ONLY RATE-LIMIT THE CHAT ENDPOINT ─────────────────────────────────
+        // Auth routes, /health, /api/me, etc. bypass this middleware entirely.
+        if (!context.Request.Path.StartsWithSegments("/api/chat"))
+        {
+            await _next(context);
+            return;
+        }
+
         // ── SKIP UNAUTHENTICATED REQUESTS ─────────────────────────────────────
-        // Auth endpoints (/auth/register, /auth/login) and /health don't have a user.
-        // If HttpContext.User isn't authenticated, just pass the request through.
+        // Should not happen for /api/chat/stream (RequireAuthorization rejects first),
+        // but guard here as a safety net.
         if (context.User.Identity?.IsAuthenticated != true)
         {
             await _next(context);
@@ -103,28 +111,13 @@ public class RateLimitMiddleware
             await db.SaveChangesAsync();
         }
 
-        // ── RESOLVE EFFECTIVE LIMITS ──────────────────────────────────────────
-        // Per-user limits (stored in DB) override the global defaults from config.
+        // ── RESOLVE EFFECTIVE TOKEN LIMIT ────────────────────────────────────
+        // Per-user limit (stored in DB) overrides the global default from config.
         // null in the DB means "use the global default".
-        var requestLimit = user.RequestLimit
-            ?? int.Parse(config["RateLimit:DailyRequestLimit"] ?? "30");
-
         var tokenLimit = user.TokenLimit
             ?? int.Parse(config["RateLimit:DailyTokenLimit"] ?? "40000");
 
-        // ── CHECK LIMITS ──────────────────────────────────────────────────────
-        if (user.DailyRequestCount >= requestLimit)
-        {
-            context.Response.StatusCode = 429; // 429 = Too Many Requests
-            await context.Response.WriteAsJsonAsync(new
-            {
-                error = "Daily request limit reached. Your usage resets at midnight UTC.",
-                requestsUsed = user.DailyRequestCount,
-                requestLimit
-            });
-            return;
-        }
-
+        // ── CHECK TOKEN LIMIT ─────────────────────────────────────────────────
         if (user.DailyTokenCount >= tokenLimit)
         {
             context.Response.StatusCode = 429;
@@ -136,13 +129,6 @@ public class RateLimitMiddleware
             });
             return;
         }
-
-        // ── INCREMENT REQUEST COUNT ───────────────────────────────────────────
-        // We increment BEFORE passing to the endpoint (not after) so that:
-        //   a) A request counts even if the client disconnects mid-stream
-        //   b) A user can't fire N requests simultaneously to bypass the limit
-        user.DailyRequestCount++;
-        await db.SaveChangesAsync();
 
         // ── PASS TO THE NEXT MIDDLEWARE / ENDPOINT ────────────────────────────
         await _next(context);

@@ -1,108 +1,146 @@
 <#
 .SYNOPSIS
-    Builds DynamoCopilot and installs it for local Dynamo testing.
+    Builds DynamoCopilot and deploys it locally for Dynamo testing.
 
 .DESCRIPTION
-    1. Builds the Extension project for both net48 and net8.0-windows.
-    2. Copies DLLs + dependencies to %AppData%\DynamoCopilot\<tfm>\.
-    3. Writes a ViewExtensionDefinition XML with the correct absolute path.
-    4. Copies the XML to any Dynamo 2.x / 3.x viewExtensions folders found.
+    1. Builds the Extension project for the required target framework(s).
+    2. Copies DLLs to %AppData%\DynamoCopilot\<tfm>\.
+    3. Creates %AppData%\DynamoCopilot\settings.json (if not already present)
+       so you can edit the server URL before launching Dynamo.
+    4. Writes a ViewExtensionDefinition XML and copies it into every Dynamo
+       viewExtensions folder found on this machine.
+
+    TFM rules (matches Dynamo's .NET version per Revit year):
+        Revit 2023, 2024            -> net48
+        Revit 2025 and above        -> net8.0-windows
+        Dynamo Sandbox 2.x          -> net48
+        Dynamo Sandbox 3.x          -> net8.0-windows
 
 .USAGE
     cd <repo root>
-    .\build-local.ps1
-
-    To build only one target framework:
+    .\build-local.ps1                          # builds both TFMs
     .\build-local.ps1 -TargetFramework net48
     .\build-local.ps1 -TargetFramework net8.0-windows
 #>
 
 param(
-    [ValidateSet("net48","net8.0-windows","both")]
+    [ValidateSet("net48", "net8.0-windows", "both")]
     [string]$TargetFramework = "both"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RepoRoot   = $PSScriptRoot
-$ServerProj = Join-Path $RepoRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
-$AppData    = [Environment]::GetFolderPath("ApplicationData")
-$DestBase   = Join-Path $AppData "DynamoCopilot"
+$RepoRoot    = $PSScriptRoot
+$ExtProj     = Join-Path $RepoRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
+$AppData     = [Environment]::GetFolderPath("ApplicationData")
+$DestBase    = Join-Path $AppData "DynamoCopilot"
 
-# ── Dynamo viewExtensions folder candidates ──────────────────────────────────
-# Add or remove paths here if Dynamo is installed in a non-default location.
+# ── Dynamo path → required TFM ───────────────────────────────────────────────
+# Key  : viewExtensions folder path
+# Value: TFM the DLLs in that folder must target
+#
+# Rule: Revit < 2025 ships with Dynamo built against .NET Framework 4.8 (net48).
+#       Revit 2025+ ships with Dynamo built against .NET 8 (net8.0-windows).
+#       Add new Revit years here as they release.
 
-$DynamoPaths = @(
-    # Dynamo for Revit 2024 / 2025 (net48)
-    "$env:ProgramFiles\Autodesk\Revit 2025\AddIns\DynamoForRevit\viewExtensions",
-    "$env:ProgramFiles\Autodesk\Revit 2024\AddIns\DynamoForRevit\viewExtensions",
-    "$env:ProgramFiles\Autodesk\Revit 2023\AddIns\DynamoForRevit\viewExtensions",
-    # Dynamo Sandbox (standalone, net8)
-    "$env:ProgramFiles\Dynamo\Dynamo Core\3\viewExtensions",
-    "$env:ProgramFiles\Dynamo\Dynamo Core\2.19\viewExtensions"
-)
+$DynamoInstalls = [ordered]@{
+    # ── Revit-hosted Dynamo ───────────────────────────────────────────────────
+    "$env:ProgramFiles\Autodesk\Revit 2026\AddIns\DynamoForRevit\viewExtensions" = "net8.0-windows"
+    "$env:ProgramFiles\Autodesk\Revit 2025\AddIns\DynamoForRevit\viewExtensions" = "net8.0-windows"
+    "$env:ProgramFiles\Autodesk\Revit 2024\AddIns\DynamoForRevit\viewExtensions" = "net48"
+    "$env:ProgramFiles\Autodesk\Revit 2023\AddIns\DynamoForRevit\viewExtensions" = "net48"
+    "$env:ProgramFiles\Autodesk\Revit 2022\AddIns\DynamoForRevit\viewExtensions" = "net48"
+    # ── Dynamo Sandbox ────────────────────────────────────────────────────────
+    "$env:ProgramFiles\Dynamo\Dynamo Core\3\viewExtensions"                       = "net8.0-windows"
+    "$env:ProgramFiles\Dynamo\Dynamo Core\2.19\viewExtensions"                    = "net48"
+    "$env:ProgramFiles\Dynamo\Dynamo Core\2.18\viewExtensions"                    = "net48"
+}
 
-# ── Helper: build + copy one target framework ────────────────────────────────
+# ── Build helper ─────────────────────────────────────────────────────────────
 
-function Build-And-Copy {
+function Build-And-Deploy {
     param([string]$Tfm)
 
     Write-Host "`n==> Building $Tfm ..." -ForegroundColor Cyan
 
-    $PublishDir = Join-Path $env:TEMP "DynamoCopilotPublish\$Tfm"
+    $PublishDir = Join-Path $env:TEMP "DynamoCopilotBuild\$Tfm"
     if (Test-Path $PublishDir) { Remove-Item $PublishDir -Recurse -Force }
 
-    & dotnet publish $ServerProj `
+    & dotnet publish $ExtProj `
         --configuration Release `
         --framework $Tfm `
         --output $PublishDir `
-        --no-self-contained `
-        | Write-Host
+        --no-self-contained
 
-    if ($LASTEXITCODE -ne 0) { throw "Build failed for $Tfm" }
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $Tfm" }
 
-    # Copy to AppData destination
+    # Copy DLLs to %AppData%\DynamoCopilot\<tfm>\
     $Dest = Join-Path $DestBase $Tfm
     New-Item -ItemType Directory -Path $Dest -Force | Out-Null
     Copy-Item "$PublishDir\*" $Dest -Recurse -Force
-    Write-Host "    DLLs copied to: $Dest" -ForegroundColor Green
+    Write-Host "    DLLs  -> $Dest" -ForegroundColor Green
 
-    # Write ViewExtensionDefinition XML
-    $Template = Join-Path $RepoRoot "DynamoCopilot_ViewExtensionDefinition.$( $Tfm -replace '\.', '' | ForEach-Object { if ($_ -eq 'net48') {'net48'} else {'net8'} } ).xml.template"
-    # Simpler: pick template by tfm
-    if ($Tfm -eq "net48") {
-        $Template = Join-Path $RepoRoot "DynamoCopilot_ViewExtensionDefinition.net48.xml.template"
-    } else {
-        $Template = Join-Path $RepoRoot "DynamoCopilot_ViewExtensionDefinition.net8.xml.template"
+    # Build the XML content (expand {{APPDATA}} to the real path)
+    $TemplateName = if ($Tfm -eq "net48") { "net48" } else { "net8" }
+    $Template     = Join-Path $RepoRoot "DynamoCopilot_ViewExtensionDefinition.$TemplateName.xml.template"
+    $XmlContent   = (Get-Content $Template -Raw) -replace '\{\{APPDATA\}\}', $AppData
+
+    # Save a copy in %AppData%\DynamoCopilot\ for reference / manual installs
+    $RefXml = Join-Path $DestBase "DynamoCopilot_ViewExtensionDefinition_$Tfm.xml"
+    Set-Content -Path $RefXml -Value $XmlContent -Encoding UTF8
+
+    # Copy XML into every matching Dynamo install found on this machine
+    $Placed = 0
+    foreach ($Entry in $DynamoInstalls.GetEnumerator()) {
+        if ($Entry.Value -ne $Tfm)          { continue }   # wrong TFM for this Dynamo
+        if (-not (Test-Path $Entry.Key))    { continue }   # Dynamo not installed here
+
+        $XmlDest = Join-Path $Entry.Key "DynamoCopilot_ViewExtensionDefinition.xml"
+        Copy-Item $RefXml $XmlDest -Force
+        Write-Host "    XML   -> $XmlDest" -ForegroundColor Green
+        $Placed++
     }
 
-    $XmlContent = (Get-Content $Template -Raw) -replace '\{\{APPDATA\}\}', $AppData
-    $XmlFile    = Join-Path $DestBase "DynamoCopilot_ViewExtensionDefinition_$Tfm.xml"
-    Set-Content -Path $XmlFile -Value $XmlContent -Encoding UTF8
-    Write-Host "    XML written:     $XmlFile" -ForegroundColor Green
-
-    # Copy XML to any installed Dynamo viewExtensions folders
-    $IsNet8   = $Tfm.StartsWith("net8")
-    foreach ($DynPath in $DynamoPaths) {
-        $PathIsNet8 = $DynPath -match "Dynamo Core\\3"
-        if ($PathIsNet8 -ne $IsNet8) { continue }   # match TFM to Dynamo generation
-        if (-not (Test-Path $DynPath)) { continue }
-
-        $XmlDest = Join-Path $DynPath "DynamoCopilot_ViewExtensionDefinition.xml"
-        Copy-Item $XmlFile $XmlDest -Force
-        Write-Host "    XML installed -> $XmlDest" -ForegroundColor Green
+    if ($Placed -eq 0) {
+        Write-Warning "No $Tfm Dynamo install found at the default paths."
+        Write-Host    "    Manually copy this XML into your Dynamo viewExtensions folder:" -ForegroundColor Yellow
+        Write-Host    "    $RefXml" -ForegroundColor Yellow
     }
+}
+
+# ── Ensure settings.json exists (create with defaults if missing) ─────────────
+# The file normally gets created the first time the extension loads inside Dynamo.
+# We create it here so you can review / edit the server URL before launching.
+
+function Ensure-Settings {
+    $SettingsFile = Join-Path $DestBase "settings.json"
+    if (Test-Path $SettingsFile) {
+        Write-Host "`n    settings.json already exists: $SettingsFile" -ForegroundColor DarkGray
+        return
+    }
+
+    New-Item -ItemType Directory -Path $DestBase -Force | Out-Null
+    $DefaultSettings = @{
+        serverUrl           = "https://copilot-dynamo-extension-production.up.railway.app"
+        maxHistoryMessages  = 40
+    } | ConvertTo-Json -Depth 2
+
+    Set-Content -Path $SettingsFile -Value $DefaultSettings -Encoding UTF8
+    Write-Host "`n    settings.json created: $SettingsFile" -ForegroundColor Green
+    Write-Host "    Edit 'serverUrl' there if you need to point to a different server." -ForegroundColor DarkGray
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+Ensure-Settings
+
 if ($TargetFramework -eq "both" -or $TargetFramework -eq "net48") {
-    Build-And-Copy "net48"
+    Build-And-Deploy "net48"
 }
 
 if ($TargetFramework -eq "both" -or $TargetFramework -eq "net8.0-windows") {
-    Build-And-Copy "net8.0-windows"
+    Build-And-Deploy "net8.0-windows"
 }
 
-Write-Host "`n==> Done. Restart Dynamo to pick up the updated extension." -ForegroundColor Green
+Write-Host "`n==> Done. Restart Dynamo to pick up the changes." -ForegroundColor Green

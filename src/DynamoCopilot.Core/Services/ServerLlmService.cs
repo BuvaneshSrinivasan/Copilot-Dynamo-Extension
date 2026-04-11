@@ -112,7 +112,8 @@ namespace DynamoCopilot.Core.Services
 
                     var data = line.Substring("data: ".Length);
 
-                    string? chunk = null;
+                    string? chunk        = null;
+                    string? serverError  = null;
                     try
                     {
                         using var doc  = JsonDocument.Parse(data);
@@ -122,12 +123,19 @@ namespace DynamoCopilot.Core.Services
                         {
                             var type = typeEl.GetString();
                             if (type == "done") yield break;
-                            if (type == "token" &&
-                                root.TryGetProperty("value", out var valueEl))
+                            if (type == "error" &&
+                                root.TryGetProperty("message", out var errEl))
+                                serverError = errEl.GetString() ?? "Unknown server error.";
+                            else if (type == "token" &&
+                                     root.TryGetProperty("value", out var valueEl))
                                 chunk = valueEl.GetString();
                         }
                     }
                     catch (JsonException) { }
+
+                    // Throw OUTSIDE the try/catch so iterators can propagate it cleanly
+                    if (serverError != null)
+                        throw new HttpRequestException($"Server error: {serverError}");
 
                     if (!string.IsNullOrEmpty(chunk))
                         yield return chunk;
