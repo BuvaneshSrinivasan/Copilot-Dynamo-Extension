@@ -60,6 +60,7 @@ Endpoints/
  AdminEndpoints.cs
  AuthEndpoints.cs
  ChatEndpoints.cs
+ UserEndpoints.cs
 Middleware/RateLimitMiddleware.cs
 Migrations/
  20260411091017_InitialCreate.cs

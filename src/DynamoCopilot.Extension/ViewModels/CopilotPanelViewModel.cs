@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -14,18 +13,16 @@ using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.GraphInterop;
 
-// Provider index constants match AiProvider enum order: Groq=0, Gemini=1, OpenRouter=2, Ollama=3, OpenAI=4, Server=5
-
 namespace DynamoCopilot.Extension.ViewModels
 {
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Per-message view model
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Per-message view model (unchanged)
+    // ─────────────────────────────────────────────────────────────────────────────
 
     public sealed class ChatMessageViewModel : INotifyPropertyChanged
     {
         private string _content = string.Empty;
-        private bool _isStreaming;
+        private bool   _isStreaming;
         private string? _codeSnippet;
 
         public ChatRole Role { get; set; }
@@ -48,39 +45,149 @@ namespace DynamoCopilot.Extension.ViewModels
             set { _codeSnippet = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasCode)); }
         }
 
-        public bool HasCode => !string.IsNullOrWhiteSpace(_codeSnippet);
-        public bool IsUser => Role == ChatRole.User;
-        public bool IsAssistant => Role == ChatRole.Assistant;
+        public bool HasCode  => !string.IsNullOrWhiteSpace(_codeSnippet);
+        public bool IsUser   => Role == ChatRole.User;
 
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string? name = null)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        private void OnPropertyChanged([CallerMemberName] string? n = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Panel ViewModel â€” pure WPF data binding, no JS bridge
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Panel ViewModel
+    // ─────────────────────────────────────────────────────────────────────────────
 
     public sealed class CopilotPanelViewModel : INotifyPropertyChanged
     {
         private readonly DynamoCopilotSettings _settings;
-        private ILlmService _llmService;
-        private readonly ChatHistoryService _historyService;
-        private readonly ViewLoadedParams _dynParams;
+        private readonly AuthService           _authService;
+        private readonly ServerLlmService      _llmService;
+        private readonly ChatHistoryService    _historyService;
+        private readonly ViewLoadedParams      _dynParams;
 
         private ChatSession _currentSession;
         private CancellationTokenSource? _streamingCts;
-        private bool _isStreaming;
-        private string _statusMessage = string.Empty;
-        private bool _showWelcome = true;
 
-        /// <summary>View wires this to auto-scroll MessageList to the bottom.</summary>
+        // ── Auth state ────────────────────────────────────────────────────────────
+
+        private bool   _isLoggedIn;
+        private bool   _isRegisterMode;
+        private bool   _isAuthBusy;
+        private string _authError = string.Empty;
+
+        // Login form fields (password handled in code-behind via PasswordBox)
+        private string _loginEmail = string.Empty;
+        private string _registerEmail = string.Empty;
+
+        // ── User info panel ───────────────────────────────────────────────────────
+
+        private bool   _showUserInfo;
+        private string _userEmail         = string.Empty;
+        private int    _requestsUsed;
+        private int    _requestLimit       = 30;
+        private int    _tokensUsed;
+        private int    _tokenLimit         = 40000;
+
+        // ── Chat state ────────────────────────────────────────────────────────────
+
+        private bool   _isStreaming;
+        private string _statusMessage = string.Empty;
+        private bool   _showWelcome   = true;
+
         public Action? RequestScrollToBottom { get; set; }
 
-        // â”€â”€â”€ Bindable â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Bindable collections ─────────────────────────────────────────────────
 
         public ObservableCollection<ChatMessageViewModel> Messages { get; }
             = new ObservableCollection<ChatMessageViewModel>();
+
+        // ── Auth bindings ─────────────────────────────────────────────────────────
+
+        public bool IsLoggedIn
+        {
+            get => _isLoggedIn;
+            private set { _isLoggedIn = value; OnPropertyChanged(); }
+        }
+
+        public bool IsRegisterMode
+        {
+            get => _isRegisterMode;
+            set { _isRegisterMode = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsLoginMode)); AuthError = string.Empty; }
+        }
+
+        public bool IsLoginMode => !_isRegisterMode;
+
+        public bool IsAuthBusy
+        {
+            get => _isAuthBusy;
+            private set { _isAuthBusy = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsAuthIdle)); }
+        }
+
+        public bool IsAuthIdle => !_isAuthBusy;
+
+        public string AuthError
+        {
+            get => _authError;
+            private set { _authError = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasAuthError)); }
+        }
+
+        public bool HasAuthError => !string.IsNullOrWhiteSpace(_authError);
+
+        public string LoginEmail
+        {
+            get => _loginEmail;
+            set { _loginEmail = value; OnPropertyChanged(); }
+        }
+
+        public string RegisterEmail
+        {
+            get => _registerEmail;
+            set { _registerEmail = value; OnPropertyChanged(); }
+        }
+
+        // ── User info bindings ────────────────────────────────────────────────────
+
+        public bool ShowUserInfo
+        {
+            get => _showUserInfo;
+            private set { _showUserInfo = value; OnPropertyChanged(); }
+        }
+
+        public string UserEmail
+        {
+            get => _userEmail;
+            private set { _userEmail = value; OnPropertyChanged(); }
+        }
+
+        public int RequestsUsed
+        {
+            get => _requestsUsed;
+            private set { _requestsUsed = value; OnPropertyChanged(); OnPropertyChanged(nameof(RequestsDisplay)); }
+        }
+
+        public int RequestLimit
+        {
+            get => _requestLimit;
+            private set { _requestLimit = value; OnPropertyChanged(); OnPropertyChanged(nameof(RequestsDisplay)); }
+        }
+
+        public string RequestsDisplay => $"{_requestsUsed} / {_requestLimit}";
+
+        public int TokensUsed
+        {
+            get => _tokensUsed;
+            private set { _tokensUsed = value; OnPropertyChanged(); OnPropertyChanged(nameof(TokensDisplay)); }
+        }
+
+        public int TokenLimit
+        {
+            get => _tokenLimit;
+            private set { _tokenLimit = value; OnPropertyChanged(); OnPropertyChanged(nameof(TokensDisplay)); }
+        }
+
+        public string TokensDisplay => $"{_tokensUsed:N0} / {_tokenLimit:N0}";
+
+        // ── Chat bindings ─────────────────────────────────────────────────────────
 
         public bool IsStreaming
         {
@@ -104,26 +211,174 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _showWelcome = value; OnPropertyChanged(); }
         }
 
-        // â”€â”€â”€ Construction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Construction ──────────────────────────────────────────────────────────
 
         public CopilotPanelViewModel(
             DynamoCopilotSettings settings,
-            ILlmService llmService,
-            ChatHistoryService historyService,
-            ViewLoadedParams dynParams)
+            AuthService           authService,
+            ServerLlmService      llmService,
+            ChatHistoryService    historyService,
+            ViewLoadedParams      dynParams)
         {
-            _settings = settings;
-            _llmService = llmService;
+            _settings       = settings;
+            _authService    = authService;
+            _llmService     = llmService;
             _historyService = historyService;
-            _dynParams = dynParams;
+            _dynParams      = dynParams;
 
             _currentSession = _historyService.Load(GetCurrentGraphPath());
             _dynParams.CurrentWorkspaceChanged += OnWorkspaceChanged;
-
-            RestoreHistory();
         }
 
-        // â”€â”€â”€ Public actions called by the View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Startup auth check ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Called once from DynamoCopilotViewExtension.Loaded().
+        /// Checks stored tokens → if valid, transitions straight to chat.
+        /// All property changes happen on the UI thread via the dispatcher
+        /// so bindings update correctly.
+        /// </summary>
+        public async Task InitializeAsync()
+        {
+            // TryLoadTokens is synchronous (just file I/O + date check)
+            if (!_authService.TryLoadTokens())
+            {
+                // No tokens or refresh token expired — stay on login screen
+                return;
+            }
+
+            // Try to get a valid access token (refreshes if near-expiry)
+            IsAuthBusy = true;
+            var token = await _authService.GetValidTokenAsync();
+            IsAuthBusy = false;
+
+            if (string.IsNullOrEmpty(token))
+            {
+                // Refresh failed — back to login
+                return;
+            }
+
+            // Tokens are good → go straight to chat
+            OnAuthSuccess();
+        }
+
+        // ── Auth actions (called by View code-behind) ─────────────────────────────
+
+        public async Task LoginAsync(string password)
+        {
+            if (IsAuthBusy) return;
+            if (string.IsNullOrWhiteSpace(LoginEmail))
+            {
+                AuthError = "Please enter your email.";
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                AuthError = "Please enter your password.";
+                return;
+            }
+
+            IsAuthBusy = true;
+            AuthError  = string.Empty;
+
+            var result = await _authService.LoginAsync(LoginEmail.Trim(), password);
+
+            IsAuthBusy = false;
+
+            if (!result.Success)
+            {
+                AuthError = result.ErrorMessage ?? "Login failed.";
+                return;
+            }
+
+            OnAuthSuccess();
+        }
+
+        public async Task RegisterAsync(string password, string confirmPassword)
+        {
+            if (IsAuthBusy) return;
+            if (string.IsNullOrWhiteSpace(RegisterEmail))
+            {
+                AuthError = "Please enter your email.";
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                AuthError = "Please enter a password.";
+                return;
+            }
+            if (password.Length < 8)
+            {
+                AuthError = "Password must be at least 8 characters.";
+                return;
+            }
+            if (password != confirmPassword)
+            {
+                AuthError = "Passwords do not match.";
+                return;
+            }
+
+            IsAuthBusy = true;
+            AuthError  = string.Empty;
+
+            var result = await _authService.RegisterAsync(RegisterEmail.Trim(), password);
+
+            IsAuthBusy = false;
+
+            if (!result.Success)
+            {
+                AuthError = result.ErrorMessage ?? "Registration failed.";
+                return;
+            }
+
+            OnAuthSuccess();
+        }
+
+        public void Logout()
+        {
+            _authService.Logout();
+
+            // Reset chat state
+            Messages.Clear();
+            ShowWelcome      = true;
+            StatusMessage    = string.Empty;
+            ShowUserInfo     = false;
+            IsLoggedIn       = false;
+            IsRegisterMode   = false;
+            AuthError        = string.Empty;
+            LoginEmail       = string.Empty;
+            RegisterEmail    = string.Empty;
+
+            _streamingCts?.Cancel();
+        }
+
+        // ── User info panel ───────────────────────────────────────────────────────
+
+        public async void ToggleUserInfo()
+        {
+            ShowUserInfo = !ShowUserInfo;
+
+            // Refresh usage stats every time the panel opens
+            if (ShowUserInfo)
+                await RefreshUserInfoAsync();
+        }
+
+        private async Task RefreshUserInfoAsync()
+        {
+            // Show cached email immediately; live counts come from /api/me
+            UserEmail = _authService.Email;
+
+            var info = await _authService.GetUserInfoAsync();
+            if (info == null) return;
+
+            UserEmail     = info.Email;
+            RequestsUsed  = info.DailyRequestCount;
+            RequestLimit  = info.EffectiveRequestLimit;
+            TokensUsed    = info.DailyTokenCount;
+            TokenLimit    = info.EffectiveTokenLimit;
+        }
+
+        // ── Chat actions ──────────────────────────────────────────────────────────
 
         public async Task SendMessageAsync(string userText)
         {
@@ -136,17 +391,13 @@ namespace DynamoCopilot.Extension.ViewModels
             var engineName = DetectPythonEngine();
             _currentSession.PythonEngine = engineName;
 
-            // Persist user turn
             _currentSession.Messages.Add(new ChatMessage { Role = ChatRole.User, Content = userText });
             var userVm = new ChatMessageViewModel { Role = ChatRole.User, Content = userText };
             AddMessage(userVm);
 
-            // Placeholder for the streaming assistant reply
             var assistantVm = new ChatMessageViewModel
             {
-                Role = ChatRole.Assistant,
-                Content = string.Empty,
-                IsStreaming = true
+                Role = ChatRole.Assistant, Content = string.Empty, IsStreaming = true
             };
             AddMessage(assistantVm);
             IsStreaming = true;
@@ -169,9 +420,19 @@ namespace DynamoCopilot.Extension.ViewModels
                 IsStreaming = false;
                 return;
             }
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("Session expired") ||
+                ex.Message.Contains("log in"))
+            {
+                // Access + refresh token both failed — force re-login
+                assistantVm.IsStreaming = false;
+                IsStreaming = false;
+                Logout();
+                return;
+            }
             catch (Exception ex)
             {
-                assistantVm.Content = $"Error: {ex.Message}";
+                assistantVm.Content     = $"Error: {ex.Message}";
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 return;
@@ -180,17 +441,14 @@ namespace DynamoCopilot.Extension.ViewModels
             var fullContent = contentBuilder.ToString();
             var codeSnippet = ExtractFirstCodeBlock(fullContent);
 
-            // Show prose and code in separate regions
-            assistantVm.Content = StripCodeBlock(fullContent);
+            assistantVm.Content     = StripCodeBlock(fullContent);
             assistantVm.CodeSnippet = codeSnippet;
             assistantVm.IsStreaming = false;
             IsStreaming = false;
 
             _currentSession.Messages.Add(new ChatMessage
             {
-                Role = ChatRole.Assistant,
-                Content = fullContent,
-                CodeSnippet = codeSnippet
+                Role = ChatRole.Assistant, Content = fullContent, CodeSnippet = codeSnippet
             });
             _historyService.Save(_currentSession);
         }
@@ -201,10 +459,9 @@ namespace DynamoCopilot.Extension.ViewModels
             try
             {
                 ClosePythonEditorWindows();
-
-                var model = GetDynamoModel();
-                var wsVm = GetCurrentWorkspaceViewModel();
-                var node = PythonNodeInterop.GetSelectedPythonNode(wsVm);
+                var model = GetDynamoModel()!;
+                var wsVm  = GetCurrentWorkspaceViewModel();
+                var node  = PythonNodeInterop.GetSelectedPythonNode(wsVm!);
 
                 if (node != null)
                 {
@@ -219,50 +476,17 @@ namespace DynamoCopilot.Extension.ViewModels
                         : "No Python Script node selected. Select one and try again.");
                 }
             }
-            catch (Exception ex)
-            {
-                ShowStatus($"Insert failed: {ex.Message}");
-            }
-        }
-
-        private static void ClosePythonEditorWindows()
-        {
-            try
-            {
-                var app = System.Windows.Application.Current;
-                if (app == null) return;
-
-                // Collect first to avoid modifying the collection while iterating
-                var toClose = new System.Collections.Generic.List<System.Windows.Window>();
-                foreach (System.Windows.Window win in app.Windows)
-                {
-                    var name = win.GetType().FullName ?? string.Empty;
-                    if (name.IndexOf("Python", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("ScriptEdit", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("EditScript", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        toClose.Add(win);
-                    }
-                }
-                foreach (var win in toClose)
-                    win.Close();
-            }
-            catch { }
+            catch (Exception ex) { ShowStatus($"Insert failed: {ex.Message}"); }
         }
 
         public async Task FixPythonErrorAsync()
         {
             if (IsStreaming) return;
-
             try
             {
                 var wsVm = GetCurrentWorkspaceViewModel();
-                var node = PythonNodeInterop.GetSelectedPythonNode(wsVm);
-                if (node == null)
-                {
-                    ShowStatus("Select a Python Script node first.");
-                    return;
-                }
+                var node = PythonNodeInterop.GetSelectedPythonNode(wsVm!);
+                if (node == null) { ShowStatus("Select a Python Script node first."); return; }
 
                 var error = PythonNodeInterop.GetNodeError(node);
                 if (string.IsNullOrWhiteSpace(error))
@@ -271,17 +495,14 @@ namespace DynamoCopilot.Extension.ViewModels
                     return;
                 }
 
-                var code = PythonNodeInterop.GetScriptContent(node);
+                var code    = PythonNodeInterop.GetScriptContent(node);
                 var message = string.IsNullOrWhiteSpace(code)
                     ? $"The Python Script node returned this error:\n\n{error}\n\nPlease provide a fix."
                     : $"The Python Script node returned this error:\n\n{error}\n\nHere is the current code:\n```python\n{code}\n```\n\nPlease fix the error.";
 
                 await SendMessageAsync(message);
             }
-            catch (Exception ex)
-            {
-                ShowStatus($"Could not read error: {ex.Message}");
-            }
+            catch (Exception ex) { ShowStatus($"Could not read error: {ex.Message}"); }
         }
 
         public void CopyToClipboard(string text)
@@ -296,208 +517,14 @@ namespace DynamoCopilot.Extension.ViewModels
             _currentSession = new ChatSession
             {
                 GraphFilePath = _currentSession.GraphFilePath,
-                PythonEngine = _currentSession.PythonEngine
+                PythonEngine  = _currentSession.PythonEngine
             };
             Messages.Clear();
-            ShowWelcome = true;
+            ShowWelcome   = true;
             StatusMessage = string.Empty;
         }
 
         public void CancelStreaming() => _streamingCts?.Cancel();
-
-        // ─── Settings panel ───────────────────────────────────────────────────────
-
-        private bool _showSettings;
-        private int _selectedProviderIndex;
-        private string _settingsApiKey = string.Empty;
-        private string _settingsModel = string.Empty;
-        private string _settingsEndpoint = string.Empty;
-
-        public bool ShowSettings
-        {
-            get => _showSettings;
-            set { _showSettings = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowChat)); }
-        }
-
-        public bool ShowChat => !_showSettings;
-
-        public int SelectedProviderIndex
-        {
-            get => _selectedProviderIndex;
-            set
-            {
-                _selectedProviderIndex = value;
-                var p = (AiProvider)value;
-                _settingsApiKey = GetSavedApiKey(p);
-                _settingsModel = GetSavedModel(p);
-                _settingsEndpoint = p == AiProvider.Server ? _settings.ServerUrl : _settings.OllamaEndpoint;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(SettingsApiKey));
-                OnPropertyChanged(nameof(SettingsModel));
-                OnPropertyChanged(nameof(SettingsEndpoint));
-                OnPropertyChanged(nameof(IsOllama));
-                OnPropertyChanged(nameof(IsServer));
-                OnPropertyChanged(nameof(ShowEndpointField));
-                OnPropertyChanged(nameof(ApiKeyLabel));
-                OnPropertyChanged(nameof(ModelHint));
-                OnPropertyChanged(nameof(ProviderNote));
-                OnPropertyChanged(nameof(EndpointLabel));
-            }
-        }
-
-        public bool IsOllama => _selectedProviderIndex == (int)AiProvider.Ollama;
-        public bool IsServer => _selectedProviderIndex == (int)AiProvider.Server;
-        /// <summary>True when the endpoint/URL field should be visible (Ollama or Server).</summary>
-        public bool ShowEndpointField => IsOllama || IsServer;
-
-        public string SettingsApiKey
-        {
-            get => _settingsApiKey;
-            set { _settingsApiKey = value; OnPropertyChanged(); }
-        }
-
-        public string SettingsModel
-        {
-            get => _settingsModel;
-            set { _settingsModel = value; OnPropertyChanged(); }
-        }
-
-        public string SettingsEndpoint
-        {
-            get => _settingsEndpoint;
-            set { _settingsEndpoint = value; OnPropertyChanged(); }
-        }
-
-        public string ApiKeyLabel
-        {
-            get
-            {
-                switch ((AiProvider)_selectedProviderIndex)
-                {
-                    case AiProvider.Groq: return "Groq API Key:";
-                    case AiProvider.Gemini: return "Gemini API Key:";
-                    case AiProvider.OpenRouter: return "OpenRouter API Key:";
-                    case AiProvider.OpenAI: return "OpenAI API Key:";
-                    case AiProvider.Server: return "Auth Token:";
-                    default: return "API Key:";
-                }
-            }
-        }
-
-        public string EndpointLabel
-        {
-            get
-            {
-                switch ((AiProvider)_selectedProviderIndex)
-                {
-                    case AiProvider.Server: return "Server URL:";
-                    default: return "Ollama Endpoint:";
-                }
-            }
-        }
-
-        public string ModelHint
-        {
-            get
-            {
-                switch ((AiProvider)_selectedProviderIndex)
-                {
-                    case AiProvider.Groq: return "e.g. llama-3.3-70b-versatile · llama-3.1-8b-instant";
-                    case AiProvider.Gemini: return "e.g. gemini-2.0-flash · gemini-1.5-flash";
-                    case AiProvider.OpenRouter: return "e.g. meta-llama/llama-3.3-70b-instruct:free · google/gemma-3-27b-it:free";
-                    case AiProvider.Ollama: return "e.g. llama3 · mistral · codellama (must be pulled first)";
-                    case AiProvider.OpenAI: return "e.g. gpt-4o · gpt-4o-mini";
-                    case AiProvider.Server: return "Model is assigned automatically based on your plan.";
-                    default: return string.Empty;
-                }
-            }
-        }
-
-        public string ProviderNote
-        {
-            get
-            {
-                switch ((AiProvider)_selectedProviderIndex)
-                {
-                    case AiProvider.Groq: return "Free · Get your key at console.groq.com";
-                    case AiProvider.Gemini: return "Free · Get your key at aistudio.google.com";
-                    case AiProvider.OpenRouter: return "Free models available · Get your key at openrouter.ai";
-                    case AiProvider.Ollama: return "Completely free · Run locally with ollama.com";
-                    case AiProvider.OpenAI: return "Paid account required · platform.openai.com";
-                    case AiProvider.Server: return "DynamoCopilot Cloud · Log in to get your auth token";
-                    default: return string.Empty;
-                }
-            }
-        }
-
-        public void OpenSettings()
-        {
-            _selectedProviderIndex = (int)_settings.Provider;
-            _settingsApiKey = GetSavedApiKey(_settings.Provider);
-            _settingsModel = GetSavedModel(_settings.Provider);
-            _settingsEndpoint = _settings.Provider == AiProvider.Server ? _settings.ServerUrl : _settings.OllamaEndpoint;
-            OnPropertyChanged(nameof(SelectedProviderIndex));
-            OnPropertyChanged(nameof(SettingsApiKey));
-            OnPropertyChanged(nameof(SettingsModel));
-            OnPropertyChanged(nameof(SettingsEndpoint));
-            OnPropertyChanged(nameof(IsOllama));
-            OnPropertyChanged(nameof(IsServer));
-            OnPropertyChanged(nameof(ShowEndpointField));
-            OnPropertyChanged(nameof(ApiKeyLabel));
-            OnPropertyChanged(nameof(ModelHint));
-            OnPropertyChanged(nameof(ProviderNote));
-            OnPropertyChanged(nameof(EndpointLabel));
-            ShowSettings = true;
-        }
-
-        public void CloseSettings() => ShowSettings = false;
-
-        public void SaveSettings()
-        {
-            if (IsStreaming) return;
-            _settings.Provider = (AiProvider)_selectedProviderIndex;
-            switch (_settings.Provider)
-            {
-                case AiProvider.Groq:        _settings.GroqApiKey = _settingsApiKey;        _settings.GroqModel = _settingsModel;        break;
-                case AiProvider.Gemini:      _settings.GeminiApiKey = _settingsApiKey;      _settings.GeminiModel = _settingsModel;      break;
-                case AiProvider.OpenRouter:  _settings.OpenRouterApiKey = _settingsApiKey;  _settings.OpenRouterModel = _settingsModel;   break;
-                case AiProvider.Ollama:      _settings.OllamaEndpoint = _settingsEndpoint;  _settings.OllamaModel = _settingsModel;      break;
-                case AiProvider.OpenAI:      _settings.OpenAiApiKey = _settingsApiKey;      _settings.OpenAiModel = _settingsModel;      break;
-                case AiProvider.Server:      _settings.ServerUrl = _settingsEndpoint;       _settings.ServerAuthToken = _settingsApiKey; break;
-            }
-            _settings.Save();
-            if (_llmService is IDisposable d) d.Dispose();
-            _llmService = LlmServiceFactory.Create(_settings);
-            ShowSettings = false;
-            ShowStatus("Settings saved — using " + _settings.Provider.ToString() + ".");
-        }
-
-        private string GetSavedApiKey(AiProvider p)
-        {
-            switch (p)
-            {
-                case AiProvider.Groq:       return _settings.GroqApiKey;
-                case AiProvider.Gemini:     return _settings.GeminiApiKey;
-                case AiProvider.OpenRouter: return _settings.OpenRouterApiKey;
-                case AiProvider.OpenAI:     return _settings.OpenAiApiKey;
-                case AiProvider.Server:     return _settings.ServerAuthToken;
-                default:                    return string.Empty;
-            }
-        }
-
-        private string GetSavedModel(AiProvider p)
-        {
-            switch (p)
-            {
-                case AiProvider.Groq:       return _settings.GroqModel;
-                case AiProvider.Gemini:     return _settings.GeminiModel;
-                case AiProvider.OpenRouter: return _settings.OpenRouterModel;
-                case AiProvider.Ollama:     return _settings.OllamaModel;
-                case AiProvider.OpenAI:     return _settings.OpenAiModel;
-                case AiProvider.Server:     return string.Empty;  // Model is server-assigned
-                default:                    return string.Empty;
-            }
-        }
 
         public void Shutdown()
         {
@@ -506,7 +533,16 @@ namespace DynamoCopilot.Extension.ViewModels
             _historyService.Save(_currentSession);
         }
 
-        // â”€â”€â”€ Private â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Private helpers ────────────────────────────────────────────────────────
+
+        private void OnAuthSuccess()
+        {
+            UserEmail  = _authService.Email;
+            IsLoggedIn = true;
+            RestoreHistory();
+            // Load live usage counts in the background (non-blocking)
+            _ = RefreshUserInfoAsync();
+        }
 
         private void OnWorkspaceChanged(Dynamo.Graph.Workspaces.IWorkspaceModel workspace)
         {
@@ -523,10 +559,10 @@ namespace DynamoCopilot.Extension.ViewModels
                 if (msg.Role == ChatRole.System) continue;
                 Messages.Add(new ChatMessageViewModel
                 {
-                    Role = msg.Role,
-                    Content = msg.Role == ChatRole.Assistant
-                        ? StripCodeBlock(msg.Content)
-                        : msg.Content,
+                    Role        = msg.Role,
+                    Content     = msg.Role == ChatRole.Assistant
+                                    ? StripCodeBlock(msg.Content)
+                                    : msg.Content,
                     CodeSnippet = msg.CodeSnippet
                 });
             }
@@ -552,7 +588,7 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             var result = new List<ChatMessage>();
             result.Add(SystemPromptFactory.Build(engineName));
-            var msgs = _currentSession.Messages;
+            var msgs  = _currentSession.Messages;
             int start = Math.Max(0, msgs.Count - _settings.MaxHistoryMessages);
             for (int i = start; i < msgs.Count; i++)
                 result.Add(msgs[i]);
@@ -563,7 +599,7 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             try
             {
-                var node = PythonNodeInterop.GetSelectedPythonNode(GetCurrentWorkspaceViewModel());
+                var node = PythonNodeInterop.GetSelectedPythonNode(GetCurrentWorkspaceViewModel()!);
                 if (node != null) return PythonNodeInterop.GetEngineName(node);
             }
             catch { }
@@ -578,10 +614,8 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private object? GetDynamoViewModel()
         {
-            // DynamoViewModel is a private field in ViewLoadedParams — must use NonPublic flags
-            var field = _dynParams.GetType()
-                .GetField("dynamoViewModel",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var field = _dynParams.GetType().GetField("dynamoViewModel",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             return field?.GetValue(_dynParams);
         }
 
@@ -603,6 +637,26 @@ namespace DynamoCopilot.Extension.ViewModels
                 ?.GetValue(dvm);
         }
 
+        private static void ClosePythonEditorWindows()
+        {
+            try
+            {
+                var app     = System.Windows.Application.Current;
+                if (app == null) return;
+                var toClose = new System.Collections.Generic.List<System.Windows.Window>();
+                foreach (System.Windows.Window win in app.Windows)
+                {
+                    var name = win.GetType().FullName ?? string.Empty;
+                    if (name.IndexOf("Python", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("ScriptEdit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("EditScript", StringComparison.OrdinalIgnoreCase) >= 0)
+                        toClose.Add(win);
+                }
+                foreach (var win in toClose) win.Close();
+            }
+            catch { }
+        }
+
         private static string? ExtractFirstCodeBlock(string markdown)
         {
             var match = Regex.Match(markdown,
@@ -621,7 +675,7 @@ namespace DynamoCopilot.Extension.ViewModels
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string? name = null)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        private void OnPropertyChanged([CallerMemberName] string? n = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
     }
 }

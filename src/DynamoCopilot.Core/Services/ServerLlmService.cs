@@ -1,113 +1,167 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using DynamoCopilot.Core.Models;
 
 namespace DynamoCopilot.Core.Services
 {
     /// <summary>
     /// Calls the DynamoCopilot server's /api/chat/stream endpoint.
-    /// The server handles model selection based on the user's subscription tier.
-    /// All LLM API keys are server-side — this client never touches them.
+    ///
+    /// Token strategy (belt + suspenders):
+    ///   Proactive — before each request, call AuthService.GetValidTokenAsync().
+    ///               That method refreshes the access token if it expires in &lt;5 min.
+    ///   Reactive  — if the server still returns 401 (e.g. clock skew, token
+    ///               revoked), attempt one refresh and retry the request.
+    ///               If the retry also fails, throw so the ViewModel can show
+    ///               the login screen.
     /// </summary>
     public sealed class ServerLlmService : ILlmService, IDisposable
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _serverUrl;
-        private readonly string _authToken;
+        private readonly HttpClient  _httpClient;
+        private readonly string      _serverUrl;
+        private readonly AuthService _authService;
 
-        public ServerLlmService(string serverUrl, string authToken)
+        public ServerLlmService(string serverUrl, AuthService authService)
         {
-            _serverUrl = serverUrl.TrimEnd('/');
-            _authToken = authToken ?? string.Empty;
-            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(180) };
+            _serverUrl   = serverUrl.TrimEnd('/');
+            _authService = authService;
+            _httpClient  = new HttpClient { Timeout = TimeSpan.FromSeconds(180) };
         }
 
         public bool IsConfigured(out string reason)
         {
-            if (string.IsNullOrWhiteSpace(_serverUrl))
-            {
-                reason = "Server URL is not configured. Open the settings panel (\u2699) to set it.";
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(_authToken))
-            {
-                reason = "Not logged in. Open the settings panel (\u2699) and save your auth token.";
-                return false;
-            }
-            reason = string.Empty;
-            return true;
+            if (_authService.HasStoredTokens) { reason = string.Empty; return true; }
+            reason = "Not logged in.";
+            return false;
         }
 
         public async IAsyncEnumerable<string> SendStreamingAsync(
             IReadOnlyList<ChatMessage> messages,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            if (!IsConfigured(out var reason))
-                throw new InvalidOperationException(reason);
+            // ── 1. Proactive token check ──────────────────────────────────────────
+            var token = await _authService.GetValidTokenAsync();
+            if (string.IsNullOrEmpty(token))
+                throw new InvalidOperationException("Session expired. Please log in again.");
 
-            // Build the request body: array of {role, content}
-            var msgArray = new List<object>(messages.Count);
-            foreach (var m in messages)
-                msgArray.Add(new { role = m.Role.ToString().ToLowerInvariant(), content = m.Content });
+            // ── 2. First attempt ──────────────────────────────────────────────────
+            var response = await SendRequestAsync(messages, token, cancellationToken);
 
-            var body = JsonSerializer.Serialize(new { messages = msgArray });
-            var endpoint = _serverUrl + "/api/chat/stream";
+            // ── 3. Reactive 401 handling ──────────────────────────────────────────
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                response.Dispose();
+                var refreshed = await _authService.RefreshAsync();
+                if (!refreshed)
+                    throw new InvalidOperationException("Session expired. Please log in again.");
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _authToken);
-            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                token    = await _authService.GetValidTokenAsync();
+                response = await SendRequestAsync(messages, token!, cancellationToken);
 
-            using var response = await _httpClient
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                .ConfigureAwait(false);
+                // Second 401 → session is truly dead
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    response.Dispose();
+                    throw new InvalidOperationException("Session expired. Please log in again.");
+                }
+            }
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                throw new InvalidOperationException("Auth token is invalid or expired. Please log in again via the settings panel.");
+            // ── 4. Other error status codes ───────────────────────────────────────
+            if (response.StatusCode == (HttpStatusCode)429)
+            {
+                response.Dispose();
+                throw new InvalidOperationException(
+                    "Daily limit reached. Your request or token limit for today has been exceeded.");
+            }
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                throw new InvalidOperationException("Your current plan does not allow this request.");
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                response.Dispose();
+                throw new InvalidOperationException(
+                    "Your account has been deactivated. Please contact support.");
+            }
 
             if (!response.IsSuccessStatusCode)
             {
-                var body2 = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                throw new HttpRequestException($"Server error {(int)response.StatusCode}: {body2}");
+                var errBody = await response.Content.ReadAsStringAsync();
+                response.Dispose();
+                throw new HttpRequestException($"Server error {(int)response.StatusCode}: {errBody}");
             }
 
-            using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-            using var reader = new StreamReader(stream);
-
-            while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+            // ── 5. Stream the SSE response ────────────────────────────────────────
+            using (response)
             {
-                var line = await reader.ReadLineAsync().ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
 
-                var data = line.Substring("data: ".Length);
-                // Server sends: {"type":"token","value":"..."} or {"type":"done"}
-                string? token = null;
-                try
+                while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
                 {
-                    using var doc = JsonDocument.Parse(data);
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("type", out var typeEl))
-                    {
-                        var type = typeEl.GetString();
-                        if (type == "done") yield break;
-                        if (type == "token" && root.TryGetProperty("value", out var valueEl))
-                            token = valueEl.GetString();
-                    }
-                }
-                catch (JsonException) { }
+                    var line = await reader.ReadLineAsync();
+                    if (string.IsNullOrWhiteSpace(line) ||
+                        !line.StartsWith("data: ", StringComparison.Ordinal))
+                        continue;
 
-                if (!string.IsNullOrEmpty(token)) yield return token;
+                    var data = line.Substring("data: ".Length);
+
+                    string? chunk = null;
+                    try
+                    {
+                        using var doc  = JsonDocument.Parse(data);
+                        var       root = doc.RootElement;
+
+                        if (root.TryGetProperty("type", out var typeEl))
+                        {
+                            var type = typeEl.GetString();
+                            if (type == "done") yield break;
+                            if (type == "token" &&
+                                root.TryGetProperty("value", out var valueEl))
+                                chunk = valueEl.GetString();
+                        }
+                    }
+                    catch (JsonException) { }
+
+                    if (!string.IsNullOrEmpty(chunk))
+                        yield return chunk;
+                }
             }
+        }
+
+        // ── Internal ──────────────────────────────────────────────────────────────
+
+        private async Task<HttpResponseMessage> SendRequestAsync(
+            IReadOnlyList<ChatMessage> messages,
+            string token,
+            CancellationToken ct)
+        {
+            var msgArray = new List<object>(messages.Count);
+            foreach (var m in messages)
+                msgArray.Add(new
+                {
+                    role    = m.Role.ToString().ToLowerInvariant(),
+                    content = m.Content
+                });
+
+            var body = JsonSerializer.Serialize(new { messages = msgArray });
+
+            // HttpRequestMessage must be re-created for each attempt (cannot be reused
+            // after SendAsync disposes the content stream).
+            using var request = new HttpRequestMessage(HttpMethod.Post, _serverUrl + "/api/chat/stream");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+            return await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
         }
 
         public void Dispose() => _httpClient.Dispose();

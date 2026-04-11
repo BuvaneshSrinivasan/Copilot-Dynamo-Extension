@@ -126,7 +126,8 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapAuthEndpoints();   // POST /auth/register, /auth/login, /auth/refresh
-app.MapChatEndpoints();   // POST /api/chat/stream (now requires JWT)
+app.MapChatEndpoints();   // POST /api/chat/stream (requires JWT)
+app.MapUserEndpoints();   // GET  /api/me          (requires JWT)
 app.MapAdminEndpoints();  // GET+POST /admin/users/* (requires X-Admin-Key header)
 
 app.Run();

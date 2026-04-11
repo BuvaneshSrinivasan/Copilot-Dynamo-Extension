@@ -11,13 +11,14 @@ namespace DynamoCopilot.Extension
     public sealed class DynamoCopilotViewExtension : IViewExtension
     {
         public string UniqueId => "7A3E2F14-C591-4D8B-A7F2-90B3E1D54C6A";
-        public string Name => "DynamoCopilot";
+        public string Name     => "DynamoCopilot";
 
         private CopilotPanelViewModel? _viewModel;
-        private CopilotPanelView? _view;
-        private ViewLoadedParams? _loadedParams;
-        private MenuItem? _toggleMenuItem;
-        private bool _panelOpen = false;
+        private CopilotPanelView?      _view;
+        private ViewLoadedParams?      _loadedParams;
+        private MenuItem?              _toggleMenuItem;
+        private AuthService?           _authService;
+        private bool                   _panelOpen = false;
 
         public void Startup(ViewStartupParams startupParams) { }
 
@@ -27,15 +28,19 @@ namespace DynamoCopilot.Extension
 
             CreateView(loadedParams);
 
-            // Add a new top-level "Dynamo Co-pilot" menu tab to the Dynamo menu bar
+            // Run startup auth check without blocking the Loaded() call.
+            // InitializeAsync updates ViewModel properties via OnPropertyChanged,
+            // which triggers WPF bindings on the UI thread automatically.
+            if (_viewModel != null)
+                _ = _viewModel.InitializeAsync();
+
+            // Add "Copilot" menu entry to Dynamo's menu bar
             try
             {
                 var topMenu = new MenuItem { Header = "Copilot" };
-
                 _toggleMenuItem = new MenuItem { Header = "Dynamo Co-pilot" };
                 _toggleMenuItem.Click += OnTogglePanel;
                 topMenu.Items.Add(_toggleMenuItem);
-
                 loadedParams.dynamoMenu.Items.Add(topMenu);
             }
             catch { }
@@ -45,7 +50,9 @@ namespace DynamoCopilot.Extension
         {
             _viewModel?.Shutdown();
             _viewModel = null;
-            _view = null;
+            _view      = null;
+            _authService?.Dispose();
+            _authService = null;
         }
 
         public void Dispose() => Shutdown();
@@ -71,11 +78,15 @@ namespace DynamoCopilot.Extension
         private void CreateView(ViewLoadedParams loadedParams)
         {
             var settings = DynamoCopilotSettings.Load();
-            var llmService = LlmServiceFactory.Create(settings);
+
+            // AuthService owns the HTTP client and token file.
+            // ServerLlmService uses AuthService for every request.
+            _authService = new AuthService(settings.ServerUrl);
+            var llmService     = new ServerLlmService(settings.ServerUrl, _authService);
             var historyService = new ChatHistoryService();
 
             _viewModel = new CopilotPanelViewModel(
-                settings, llmService, historyService, loadedParams);
+                settings, _authService, llmService, historyService, loadedParams);
 
             _view = new CopilotPanelView(_viewModel);
         }

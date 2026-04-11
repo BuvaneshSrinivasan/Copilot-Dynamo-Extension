@@ -6,10 +6,6 @@ using DynamoCopilot.Extension.ViewModels;
 
 namespace DynamoCopilot.Extension.Views
 {
-    /// <summary>
-    /// Code-behind for the Copilot chat panel.
-    /// Pure WPF — no WebView2 dependency.
-    /// </summary>
     public partial class CopilotPanelView : UserControl
     {
         private readonly CopilotPanelViewModel _viewModel;
@@ -20,22 +16,52 @@ namespace DynamoCopilot.Extension.Views
             InitializeComponent();
             DataContext = _viewModel;
 
-            // Wire scroll-to-bottom callback
             _viewModel.RequestScrollToBottom = ScrollToBottom;
-
-            // Auto-scroll when items change
             _viewModel.Messages.CollectionChanged += (_, _) => ScrollToBottom();
         }
 
-        // ── Send / Stop ───────────────────────────────────────────────────
+        // ── Auth ──────────────────────────────────────────────────────────────
+
+        private async void OnLoginClick(object sender, RoutedEventArgs e)
+            => await _viewModel.LoginAsync(LoginPasswordBox.Password);
+
+        private async void OnRegisterClick(object sender, RoutedEventArgs e)
+            => await _viewModel.RegisterAsync(
+                   RegisterPasswordBox.Password,
+                   RegisterConfirmPasswordBox.Password);
+
+        private void OnSwitchToRegister(object sender, MouseButtonEventArgs e)
+        {
+            _viewModel.IsRegisterMode = true;
+            LoginPasswordBox.Clear();
+        }
+
+        private void OnSwitchToLogin(object sender, MouseButtonEventArgs e)
+        {
+            _viewModel.IsRegisterMode = false;
+            RegisterPasswordBox.Clear();
+            RegisterConfirmPasswordBox.Clear();
+        }
+
+        // ── User info ─────────────────────────────────────────────────────────
+
+        private void OnUserIconClick(object sender, RoutedEventArgs e)
+            => _viewModel.ToggleUserInfo();
+
+        private void OnSignOutClick(object sender, RoutedEventArgs e)
+        {
+            _viewModel.Logout();
+            // Clear password boxes so they don't retain values after sign-out
+            LoginPasswordBox.Clear();
+            RegisterPasswordBox.Clear();
+            RegisterConfirmPasswordBox.Clear();
+        }
+
+        // ── Chat ──────────────────────────────────────────────────────────────
 
         private async void OnSendClick(object sender, RoutedEventArgs e)
         {
-            if (_viewModel.IsStreaming)
-            {
-                _viewModel.CancelStreaming();
-                return;
-            }
+            if (_viewModel.IsStreaming) { _viewModel.CancelStreaming(); return; }
             await SendInputAsync();
         }
 
@@ -45,8 +71,7 @@ namespace DynamoCopilot.Extension.Views
             {
                 if (Keyboard.Modifiers == ModifierKeys.Shift)
                 {
-                    // Shift+Enter → manual newline
-                    var tb = (TextBox)sender;
+                    var tb  = (TextBox)sender;
                     int pos = tb.CaretIndex;
                     tb.Text = tb.Text.Insert(pos, "\n");
                     tb.CaretIndex = pos + 1;
@@ -54,10 +79,8 @@ namespace DynamoCopilot.Extension.Views
                 }
                 else if (Keyboard.Modifiers == ModifierKeys.None)
                 {
-                    // Enter → send (handled before TextBox processes it via PreviewKeyDown)
                     e.Handled = true;
-                    if (!_viewModel.IsStreaming)
-                        await SendInputAsync();
+                    if (!_viewModel.IsStreaming) await SendInputAsync();
                 }
             }
         }
@@ -70,7 +93,7 @@ namespace DynamoCopilot.Extension.Views
             await _viewModel.SendMessageAsync(text);
         }
 
-        // ── Code block buttons ────────────────────────────────────────────
+        // ── Code block buttons ────────────────────────────────────────────────
 
         private void OnCopyCodeClick(object sender, RoutedEventArgs e)
         {
@@ -84,28 +107,13 @@ namespace DynamoCopilot.Extension.Views
                 _viewModel.InsertCode(code);
         }
 
-        // ── Fix Python Error ──────────────────────────────────────────────
-
         private async void OnFixErrorClick(object sender, RoutedEventArgs e)
             => await _viewModel.FixPythonErrorAsync();
-
-        // ── Clear ─────────────────────────────────────────────────────────
 
         private void OnClearClick(object sender, RoutedEventArgs e)
             => _viewModel.ClearHistory();
 
-        // ── Settings ──────────────────────────────────────────────────────
-
-        private void OnSettingsClick(object sender, RoutedEventArgs e)
-            => _viewModel.OpenSettings();
-
-        private void OnSaveSettingsClick(object sender, RoutedEventArgs e)
-            => _viewModel.SaveSettings();
-
-        private void OnCancelSettingsClick(object sender, RoutedEventArgs e)
-            => _viewModel.CloseSettings();
-
-        // ── Example prompts ───────────────────────────────────────────────
+        // ── Example prompts ───────────────────────────────────────────────────
 
         private async void OnExampleClick(object sender, RoutedEventArgs e)
         {
@@ -116,7 +124,7 @@ namespace DynamoCopilot.Extension.Views
             }
         }
 
-        // ── Scroll helper ─────────────────────────────────────────────────
+        // ── Scroll helper ─────────────────────────────────────────────────────
 
         private void ScrollToBottom()
         {
