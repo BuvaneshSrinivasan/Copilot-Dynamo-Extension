@@ -55,8 +55,15 @@ TemporaryDependencyNodeTargetIdentifier=net8.0
 /warnaserror+:NU1605,SYSLIB0011
 
 [sourceFiles]
+Data/AppDbContext.cs
 Endpoints/ChatEndpoints.cs
-Models/ChatRequest.cs
+Migrations/
+ 20260411091017_InitialCreate.cs
+ 20260411091017_InitialCreate.Designer.cs
+ AppDbContextModelSnapshot.cs
+Models/
+ ChatRequest.cs
+ User.cs
 obj/Debug/net8.0/
  .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
  DynamoCopilot.Server.AssemblyInfo.cs
@@ -371,6 +378,7 @@ Services/
  System.Xml.XPath.XDocument.dll
  WindowsBase.dll
 <NUGET>/
+ bcrypt.net-next/4.1.0/lib/netstandard2.1/BCrypt.Net-Next.dll
  microsoft.aspnetcore.authentication.jwtbearer/8.0.25/lib/net8.0/Microsoft.AspNetCore.Authentication.JwtBearer.dll
  microsoft.entityframeworkcore.abstractions/8.0.25/lib/net8.0/Microsoft.EntityFrameworkCore.Abstractions.dll
  microsoft.entityframeworkcore.relational/8.0.25/lib/net8.0/Microsoft.EntityFrameworkCore.Relational.dll

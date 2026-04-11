@@ -1,98 +1,134 @@
 // =============================================================================
 // Program.cs — Application Entry Point
 // =============================================================================
-// This file bootstraps the entire ASP.NET Core application.
-//
-// Every ASP.NET Core app follows the same three-step pattern:
-//
-//   STEP 1 — Register services into the DI container
-//             Services are objects your app needs (e.g. GeminiService, HttpClient).
-//             You register them here and ASP.NET Core creates + provides them
-//             automatically to any class that asks for them in its constructor.
-//
-//   STEP 2 — builder.Build()
-//             This locks in your services and creates the WebApplication object.
-//
-//   STEP 3 — Configure the middleware pipeline, then call app.Run()
-//             Middleware = code that runs on EVERY request before hitting your endpoint.
-//             The pipeline runs top-to-bottom in the order you add it.
-//             [To learn more: Microsoft Docs — "ASP.NET Core Middleware"]
+// Phase 2 additions vs Phase 1:
+//   - DbContext registration (connects EF Core to PostgreSQL)
+//   - Auto-migration on startup (creates/updates the DB schema on every deploy)
+//   - ResolveConnectionString helper (handles both local dev and Railway formats)
 // =============================================================================
 
+using DynamoCopilot.Server.Data;
 using DynamoCopilot.Server.Endpoints;
 using DynamoCopilot.Server.Services;
+using Microsoft.EntityFrameworkCore;
 
 // ── STEP 1: REGISTER SERVICES ─────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Railway (and most cloud platforms) tell your app which port to listen on
-// via the PORT environment variable. We read it here so the app binds correctly.
-// Without this, the app would default to port 5000/5001 and Railway wouldn't route to it.
+// Railway sets PORT automatically. Without this, the app binds to the wrong port
+// and Railway's health checks fail.
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// IHttpClientFactory manages a pool of reusable HttpClient instances.
-// Why use a factory instead of `new HttpClient()`?
-// Creating a new HttpClient() per request opens a new socket each time.
-// Sockets aren't freed immediately after use — under load, you exhaust the OS limit.
-// The factory reuses underlying sockets safely. Always use this pattern in ASP.NET Core.
+// IHttpClientFactory — reuses sockets to avoid socket exhaustion under load
 builder.Services.AddHttpClient();
 
-// Register GeminiService as the concrete implementation of ILlmService.
-// "Scoped" lifetime = one GeminiService instance is created per HTTP request,
-// then disposed when the request ends.
-//
-// Because we register the INTERFACE (ILlmService), not the class (GeminiService),
-// ChatEndpoints.cs never directly references GeminiService. This means:
-// - Swapping to a different AI provider = changing this one line only.
-// - Writing unit tests = inject a fake ILlmService, no real API calls needed.
+// AI provider — change this one line to swap to a different LLM in the future
 builder.Services.AddScoped<ILlmService, GeminiService>();
+
+// DATABASE
+// AddDbContext registers AppDbContext as Scoped (one instance per HTTP request).
+// Scoped is the correct lifetime for DbContext — it should not be shared across requests
+// because it tracks changes in memory and is not thread-safe.
+//
+// UseNpgsql tells EF Core to use the Npgsql provider (PostgreSQL).
+// We pass the connection string via a helper function (see bottom of this file)
+// so that we handle both local development and Railway production formats.
+builder.Services.AddDbContext<AppDbContext>(opts =>
+    opts.UseNpgsql(ResolveConnectionString(builder.Configuration)));
 
 // ── STEP 2: BUILD ─────────────────────────────────────────────────────────────
 
 var app = builder.Build();
 
-// ── STEP 3: MIDDLEWARE PIPELINE ───────────────────────────────────────────────
+// ── AUTO-MIGRATE ON STARTUP ───────────────────────────────────────────────────
+// This block runs any pending EF Core migrations when the app starts.
 //
-// Think of middleware as a series of checkpoints every request passes through.
-// Each checkpoint can:
-//   a) Process the request and pass it to the next checkpoint  (e.g. log the URL)
-//   b) Short-circuit and return early                          (e.g. return 401)
-//   c) Do work after the inner handler returns                 (e.g. log response time)
+// Why auto-migrate instead of running `dotnet ef database update` manually?
+//   - Railway restarts the container on every deploy
+//   - Running the migration at startup guarantees the schema is always in sync
+//   - EF Core migrations are idempotent (safe to run multiple times — they skip
+//     migrations that have already been applied)
 //
-//   Request ──▶ [Middleware A] ──▶ [Middleware B] ──▶ [Your Endpoint]
-//                                                             │
-//   Response ◀── [Middleware A] ◀── [Middleware B] ◀──────────┘
+// How it works:
+//   - EF Core keeps a "__EFMigrationsHistory" table in your database
+//   - On startup it checks which migrations are listed there
+//   - Any migration NOT in that table gets applied
 //
-// ORDER MATTERS — middleware runs in the exact order it is added here.
-// We will add more middleware in later phases:
-//   Phase 3: UseAuthentication() + UseAuthorization() (JWT validation)
-//   Phase 4: A custom RateLimitMiddleware
+// We create a temporary scope because DbContext is Scoped
+// (it can't be resolved from the root scope directly)
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
 
-// In Development: show a detailed error page with the full stack trace in Postman/browser.
-// In Production: never expose stack traces. ASP.NET Core handles this automatically
-// based on the ASPNETCORE_ENVIRONMENT environment variable.
+// ── STEP 3: MIDDLEWARE PIPELINE ───────────────────────────────────────────────
+
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
 
-// ── ENDPOINTS ─────────────────────────────────────────────────────────────────
-// These extension methods (defined in the Endpoints/ folder) register the actual
-// URL routes. Keeping them in separate files keeps Program.cs readable as the
-// project grows.
+// [Phase 3] UseAuthentication() and UseAuthorization() go here
+// [Phase 4] app.UseMiddleware<RateLimitMiddleware>() goes here
 
-// GET /health — used by Railway to verify the container is running
+// ── ENDPOINTS ─────────────────────────────────────────────────────────────────
+
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
-    version = "1.0",
+    version = "2.0",
     timestamp = DateTime.UtcNow
 }));
 
-// POST /api/chat/stream — the main chat endpoint
-// [Phase 3] .RequireAuthorization() will be added here once JWT auth is set up
 app.MapChatEndpoints();
+// [Phase 3] app.MapAuthEndpoints() goes here
+// [Phase 5] app.MapAdminEndpoints() goes here
 
 app.Run();
+
+// =============================================================================
+// HELPER: ResolveConnectionString
+// =============================================================================
+// Why do we need this?
+//
+// Local development uses a key-value connection string:
+//   "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=dynamocopilot_dev"
+//
+// Railway provides a full PostgreSQL URI in the DATABASE_URL environment variable:
+//   "postgresql://username:password@host.railway.internal:5432/railway"
+//
+// Npgsql (the PostgreSQL driver for .NET) supports both formats, but we need to
+// handle both cases and add SSL settings for Railway's managed database.
+// =============================================================================
+static string ResolveConnectionString(IConfiguration config)
+{
+    // Railway sets DATABASE_URL automatically when you add a PostgreSQL addon.
+    // Check for it first — if it exists, we're running in production on Railway.
+    var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+
+    if (!string.IsNullOrEmpty(databaseUrl))
+    {
+        // Convert the URI format to Npgsql key-value format.
+        // URI: postgresql://alice:secret@db.railway.internal:5432/mydb
+        // Npgsql: Host=db.railway.internal;Port=5432;Username=alice;Password=secret;Database=mydb
+        var uri = new Uri(databaseUrl);
+        var userInfo = uri.UserInfo.Split(':', 2);
+
+        return $"Host={uri.Host};" +
+               $"Port={uri.Port};" +
+               $"Username={userInfo[0]};" +
+               $"Password={Uri.UnescapeDataString(userInfo[1])};" +
+               $"Database={uri.AbsolutePath.TrimStart('/')};" +
+               $"SSL Mode=Require;" +
+               $"Trust Server Certificate=true";
+    }
+
+    // Local development: read from ConnectionStrings:DefaultConnection in appsettings.Development.json
+    return config.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException(
+            "No database connection configured. " +
+            "Add ConnectionStrings:DefaultConnection to appsettings.Development.json.");
+}
