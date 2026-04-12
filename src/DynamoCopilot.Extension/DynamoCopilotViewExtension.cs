@@ -11,7 +11,7 @@ namespace DynamoCopilot.Extension
     public sealed class DynamoCopilotViewExtension : IViewExtension
     {
         public string UniqueId => "7A3E2F14-C591-4D8B-A7F2-90B3E1D54C6A";
-        public string Name     => "DynamoCopilot";
+        public string Name     => "Dynamo Co-pilot";
 
         private CopilotPanelViewModel? _viewModel;
         private CopilotPanelView?      _view;

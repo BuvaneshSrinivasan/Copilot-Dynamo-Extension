@@ -69,7 +69,8 @@
                             </Grid.ColumnDefinitions>
                             <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
                                                     Grid.Column="0" CanContentScroll="True"/>
-                            <ScrollBar Grid.Column="1"
+                            <ScrollBar x:Name="PART_VerticalScrollBar"
+                                       Grid.Column="1"
                                        Orientation="Vertical"
                                        Style="{StaticResource ThinScrollBar}"
                                        Value="{TemplateBinding VerticalOffset}"
@@ -253,7 +254,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="DynamoCopilot"
+                <TextBlock Grid.Row="0" Text="Dynamo Co-pilot"
                            FontSize="10" Foreground="{StaticResource AccentBrush}"
                            FontWeight="SemiBold" Margin="0,0,0,3"
                            HorizontalAlignment="Left"/>
@@ -447,7 +448,7 @@
                     <Path Data="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"
                           Fill="#6EC6F5" Width="36" Height="36" Stretch="Uniform"
                           HorizontalAlignment="Center" Margin="0,0,0,10" Opacity="0.9"/>
-                    <TextBlock Text="DynamoCopilot"
+                    <TextBlock Text="Dynamo Co-pilot"
                                FontSize="18" FontWeight="Bold"
                                Foreground="{StaticResource TextBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,4"/>
@@ -605,7 +606,7 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Path Data="M8,1 L9.2,5.5 L13.5,5.5 L10,8.5 L11.2,13 L8,10.5 L4.8,13 L6,8.5 L2.5,5.5 L6.8,5.5 Z"
                               Fill="#6EC6F5" Width="14" Height="14" Stretch="Uniform" Margin="0,0,7,0"/>
-                        <TextBlock Text="DynamoCopilot"
+                        <TextBlock Text="Dynamo Co-pilot"
                                    Foreground="{StaticResource TextBrush}"
                                    FontWeight="SemiBold" FontSize="13"
                                    VerticalAlignment="Center"/>
@@ -703,7 +704,8 @@
                           HorizontalScrollBarVisibility="Disabled"
                           Style="{StaticResource ThinScrollViewer}"
                           Background="{StaticResource BgBrush}"
-                          Padding="0,4">
+                          Padding="0,4"
+                          PreviewMouseWheel="OnChatPreviewMouseWheel">
                 <Grid>
                     <!-- Welcome state -->
                     <StackPanel Margin="16,32,16,0"
@@ -712,7 +714,7 @@
                         <Path Data="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"
                               Fill="#6EC6F5" Width="40" Height="40" Stretch="Uniform"
                               HorizontalAlignment="Center" Margin="0,0,0,12" Opacity="0.8"/>
-                        <TextBlock Text="DynamoCopilot"
+                        <TextBlock Text="Dynamo Co-pilot"
                                    FontSize="16" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextBrush}"
                                    HorizontalAlignment="Center" Margin="0,0,0,8"/>

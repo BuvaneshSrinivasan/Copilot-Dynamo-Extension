@@ -124,7 +124,7 @@ namespace DynamoCopilot.Extension.Views
             }
         }
 
-        // ── Scroll helper ─────────────────────────────────────────────────────
+        // ── Scroll helpers ────────────────────────────────────────────────────
 
         private void ScrollToBottom()
         {
@@ -134,6 +134,19 @@ namespace DynamoCopilot.Extension.Views
                 return;
             }
             ChatScrollViewer.ScrollToBottom();
+        }
+
+        // PreviewMouseWheel tunnels DOWN before any child can handle it.
+        // WPF's ScrollViewer (and TextBox) mark MouseWheel as handled even when
+        // they can't scroll in the requested direction — this swallows the event
+        // and the outer chat viewer never moves. By intercepting here we always
+        // scroll the chat viewer and mark the event handled so children don't
+        // double-consume it.
+        private void OnChatPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            ChatScrollViewer.ScrollToVerticalOffset(
+                ChatScrollViewer.VerticalOffset - e.Delta);
+            e.Handled = true;
         }
     }
 }
