@@ -81,8 +81,8 @@ namespace DynamoCopilot.Extension
 
             // AuthService owns the HTTP client and token file.
             // ServerLlmService uses AuthService for every request.
-            _authService = new AuthService(settings.ServerUrl);
-            var llmService     = new ServerLlmService(settings.ServerUrl, _authService);
+            _authService = new AuthService(settings.EffectiveServerUrl);
+            var llmService     = new ServerLlmService(settings.EffectiveServerUrl, _authService);
             var historyService = new ChatHistoryService();
 
             _viewModel = new CopilotPanelViewModel(

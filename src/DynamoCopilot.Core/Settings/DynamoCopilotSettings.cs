@@ -29,6 +29,17 @@ namespace DynamoCopilot.Core.Settings
         [JsonPropertyName("maxHistoryMessages")]
         public int MaxHistoryMessages { get; set; } = 40;
 
+        [JsonPropertyName("useLocalServer")]
+        public bool UseLocalServer { get; set; } = false;
+
+        [JsonPropertyName("localServerUrl")]
+        public string LocalServerUrl { get; set; } = "http://localhost:8080";
+
+        [JsonIgnore]
+        public string EffectiveServerUrl => UseLocalServer
+            ? LocalServerUrl.TrimEnd('/')
+            : ServerUrl.TrimEnd('/');
+
         public static DynamoCopilotSettings Load()
         {
             if (!File.Exists(SettingsFilePath))

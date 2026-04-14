@@ -1,0 +1,50 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DynamoCopilot.Core", "src\DynamoCopilot.Core\DynamoCopilot.Core.csproj", "{BBC7D226-DE36-0C91-1F1F-42A107355036}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DynamoCopilot.Extension", "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj", "{4E1BFD06-E22A-290A-50A9-03492FE75048}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DynamoCopilot.GraphInterop", "src\DynamoCopilot.GraphInterop\DynamoCopilot.GraphInterop.csproj", "{90F80B53-49DE-AACA-9134-73FB46AB5434}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DynamoCopilot.Server", "src\DynamoCopilot.Server\DynamoCopilot.Server.csproj", "{F5DB11FE-8843-6303-9C6C-D6520AEEF152}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BBC7D226-DE36-0C91-1F1F-42A107355036}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BBC7D226-DE36-0C91-1F1F-42A107355036}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BBC7D226-DE36-0C91-1F1F-42A107355036}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BBC7D226-DE36-0C91-1F1F-42A107355036}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E1BFD06-E22A-290A-50A9-03492FE75048}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E1BFD06-E22A-290A-50A9-03492FE75048}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E1BFD06-E22A-290A-50A9-03492FE75048}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E1BFD06-E22A-290A-50A9-03492FE75048}.Release|Any CPU.Build.0 = Release|Any CPU
+		{90F80B53-49DE-AACA-9134-73FB46AB5434}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{90F80B53-49DE-AACA-9134-73FB46AB5434}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{90F80B53-49DE-AACA-9134-73FB46AB5434}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{90F80B53-49DE-AACA-9134-73FB46AB5434}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F5DB11FE-8843-6303-9C6C-D6520AEEF152}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F5DB11FE-8843-6303-9C6C-D6520AEEF152}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F5DB11FE-8843-6303-9C6C-D6520AEEF152}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F5DB11FE-8843-6303-9C6C-D6520AEEF152}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{BBC7D226-DE36-0C91-1F1F-42A107355036} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{4E1BFD06-E22A-290A-50A9-03492FE75048} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{90F80B53-49DE-AACA-9134-73FB46AB5434} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{F5DB11FE-8843-6303-9C6C-D6520AEEF152} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {632FF1F7-28B5-4A1F-BA2D-136CE2BCAD5C}
+	EndGlobalSection
+EndGlobal

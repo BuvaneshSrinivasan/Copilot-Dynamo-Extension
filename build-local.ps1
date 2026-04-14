@@ -21,11 +21,14 @@
     .\build-local.ps1                          # builds both TFMs
     .\build-local.ps1 -TargetFramework net48
     .\build-local.ps1 -TargetFramework net8.0-windows
+    .\build-local.ps1 -UseLocalServer          # build and point the extension at localhost:8080
 #>
 
 param(
     [ValidateSet("net48", "net8.0-windows", "both")]
-    [string]$TargetFramework = "both"
+    [string]$TargetFramework = "both",
+
+    [switch]$UseLocalServer
 )
 
 Set-StrictMode -Version Latest
@@ -91,18 +94,28 @@ function Build-And-Deploy {
     Set-Content -Path $RefXml -Value $XmlContent -Encoding UTF8
 
     # Copy XML into every matching Dynamo install found on this machine
+    $Found = 0
     $Placed = 0
     foreach ($Entry in $DynamoInstalls.GetEnumerator()) {
         if ($Entry.Value -ne $Tfm)          { continue }   # wrong TFM for this Dynamo
         if (-not (Test-Path $Entry.Key))    { continue }   # Dynamo not installed here
 
+        $Found++
         $XmlDest = Join-Path $Entry.Key "DynamoCopilot_ViewExtensionDefinition.xml"
-        Copy-Item $RefXml $XmlDest -Force
-        Write-Host "    XML   -> $XmlDest" -ForegroundColor Green
-        $Placed++
+        try {
+            Copy-Item $RefXml $XmlDest -Force
+            Write-Host "    XML   -> $XmlDest" -ForegroundColor Green
+            $Placed++
+        }
+        catch [System.UnauthorizedAccessException] {
+            Write-Warning "Permission denied writing to $XmlDest. Run PowerShell as Administrator or copy the XML manually."
+        }
+        catch {
+            Write-Warning ("Failed to write {0}: {1}" -f $XmlDest, $_)
+        }
     }
 
-    if ($Placed -eq 0) {
+    if ($Found -eq 0) {
         Write-Warning "No $Tfm Dynamo install found at the default paths."
         Write-Host    "    Manually copy this XML into your Dynamo viewExtensions folder:" -ForegroundColor Yellow
         Write-Host    "    $RefXml" -ForegroundColor Yellow
@@ -124,16 +137,52 @@ function Ensure-Settings {
     $DefaultSettings = @{
         serverUrl           = "https://copilot-dynamo-extension-production.up.railway.app"
         maxHistoryMessages  = 40
-    } | ConvertTo-Json -Depth 2
+        useLocalServer      = $false
+        localServerUrl      = "http://localhost:8080"
+    } | ConvertTo-Json -Depth 4
 
     Set-Content -Path $SettingsFile -Value $DefaultSettings -Encoding UTF8
     Write-Host "`n    settings.json created: $SettingsFile" -ForegroundColor Green
     Write-Host "    Edit 'serverUrl' there if you need to point to a different server." -ForegroundColor DarkGray
 }
 
+function Set-LocalServerMode {
+    param(
+        [bool]$Enabled,
+        [string]$Url = "http://localhost:8080"
+    )
+
+    $SettingsFile = Join-Path $DestBase "settings.json"
+    if (-not (Test-Path $SettingsFile)) { return }
+
+    $settings = Get-Content $SettingsFile -Raw | ConvertFrom-Json
+
+    if (-not $settings.PSObject.Properties['useLocalServer']) {
+        Add-Member -InputObject $settings -MemberType NoteProperty -Name useLocalServer -Value $Enabled
+    }
+    else {
+        $settings.useLocalServer = $Enabled
+    }
+
+    if (-not $settings.PSObject.Properties['localServerUrl']) {
+        Add-Member -InputObject $settings -MemberType NoteProperty -Name localServerUrl -Value $Url
+    }
+    else {
+        $settings.localServerUrl = $Url
+    }
+
+    $settings | ConvertTo-Json -Depth 4 | Set-Content -Path $SettingsFile -Encoding UTF8
+
+    Write-Host "    useLocalServer = $Enabled" -ForegroundColor DarkGray
+    if ($Enabled) { Write-Host "    localServerUrl = $Url" -ForegroundColor DarkGray }
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 Ensure-Settings
+if ($UseLocalServer) {
+    Set-LocalServerMode -Enabled $true
+}
 
 if ($TargetFramework -eq "both" -or $TargetFramework -eq "net48") {
     Build-And-Deploy "net48"
