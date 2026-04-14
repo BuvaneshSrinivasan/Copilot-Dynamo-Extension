@@ -83,6 +83,62 @@
             </Setter>
         </Style>
 
+        <!-- ── Thin horizontal scroll bar ───────────────────────────── -->
+        <Style x:Key="ThinScrollBarH" TargetType="ScrollBar">
+            <Setter Property="Height" Value="6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Background="#3A3A3A" CornerRadius="3" Margin="1"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ── Code block scroll viewer (horizontal only, thin bar) ─── -->
+        <Style x:Key="CodeScrollViewer" TargetType="ScrollViewer">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollViewer">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                    Grid.Row="0"/>
+                            <ScrollBar x:Name="PART_HorizontalScrollBar"
+                                       Grid.Row="1"
+                                       Orientation="Horizontal"
+                                       Style="{StaticResource ThinScrollBarH}"
+                                       Value="{TemplateBinding HorizontalOffset}"
+                                       Maximum="{TemplateBinding ScrollableWidth}"
+                                       ViewportSize="{TemplateBinding ViewportWidth}"
+                                       Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ── Shared button style (flat, dark) ─────────────────────── -->
         <Style x:Key="FlatBtn" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -396,14 +452,20 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                        <ScrollViewer Style="{StaticResource CodeScrollViewer}"
+                                      HorizontalScrollBarVisibility="Auto"
                                       VerticalScrollBarVisibility="Disabled"
                                       Padding="10,8">
-                            <TextBlock Text="{Binding CodeSnippet}"
-                                       FontFamily="Cascadia Code, Consolas, Courier New"
-                                       FontSize="12"
-                                       Foreground="#CE9178"
-                                       TextWrapping="NoWrap"/>
+                            <TextBox Text="{Binding CodeSnippet}"
+                                     FontFamily="Cascadia Code, Consolas, Courier New"
+                                     FontSize="12"
+                                     Foreground="#CE9178"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     IsReadOnly="True"
+                                     TextWrapping="NoWrap"
+                                     Padding="0"
+                                     Cursor="IBeam"/>
                         </ScrollViewer>
                     </StackPanel>
                 </Border>

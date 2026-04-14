@@ -92,7 +92,15 @@ public class GeminiService : ILlmService
             {
                 parts = new[] { new { text = _systemPrompt } }
             },
-            contents
+            contents,
+            // Disable thinking tokens. Gemini 2.5 Flash enables thinking by default,
+            // which bills at $3.50/1M tokens — ~6x more expensive than regular output.
+            // Code generation does not benefit from thinking; disabling it cuts costs
+            // by ~85% with no meaningful quality loss for this use case.
+            generation_config = new
+            {
+                thinking_config = new { thinking_budget = 0 }
+            }
         };
 
         // JsonNamingPolicy.SnakeCaseLower converts C# PascalCase property names
