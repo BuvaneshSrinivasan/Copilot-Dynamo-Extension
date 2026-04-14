@@ -16,6 +16,7 @@ using DynamoCopilot.Server.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Pgvector.EntityFrameworkCore;
 
 // ── STEP 1: REGISTER SERVICES ─────────────────────────────────────────────────
 
@@ -27,14 +28,19 @@ builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<ILlmService, GeminiService>();
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<EmbeddingService>();
+builder.Services.AddScoped<NodeSearchService>();
 
 // UsageTracker is Scoped so GeminiService and RateLimitMiddleware share the
 // same instance within one request — GeminiService writes, middleware reads.
 builder.Services.AddScoped<UsageTracker>();
 
 // DATABASE
+// UseVector() enables pgvector support in Npgsql — must be called here on the
+// NpgsqlDbContextOptionsBuilder so the Vector type is registered with the type mapper.
 builder.Services.AddDbContext<AppDbContext>(opts =>
-    opts.UseNpgsql(ResolveConnectionString(builder.Configuration)));
+    opts.UseNpgsql(ResolveConnectionString(builder.Configuration),
+        npgsql => npgsql.UseVector()));
 
 // JWT AUTHENTICATION
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,9 +132,10 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapAuthEndpoints();   // POST /auth/register, /auth/login, /auth/refresh
-app.MapChatEndpoints();   // POST /api/chat/stream (requires JWT)
-app.MapUserEndpoints();   // GET  /api/me          (requires JWT)
+app.MapChatEndpoints();   // POST /api/chat/stream  (requires JWT)
+app.MapUserEndpoints();   // GET  /api/me            (requires JWT)
 app.MapAdminEndpoints();  // GET+POST /admin/users/* (requires X-Admin-Key header)
+app.MapNodeEndpoints();   // POST /api/nodes/suggest (requires JWT)
 
 app.Run();
 
