@@ -62,6 +62,7 @@ Models/
  AuthModels.cs
  ChatMessage.cs
  ChatSession.cs
+ NodeSuggestion.cs
 obj/Debug/net48/
  .NETFramework,Version=v4.8.AssemblyAttributes.cs
  DynamoCopilot.Core.AssemblyInfo.cs
@@ -69,6 +70,7 @@ Services/
  AuthService.cs
  ChatHistoryService.cs
  ILlmService.cs
+ NodeSuggestService.cs
  ServerLlmService.cs
  SystemPromptFactory.cs
 Settings/DynamoCopilotSettings.cs
@@ -157,6 +159,7 @@ Models/
  AuthModels.cs
  ChatMessage.cs
  ChatSession.cs
+ NodeSuggestion.cs
 obj/Debug/net8.0-windows/
  .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
  DynamoCopilot.Core.AssemblyInfo.cs
@@ -164,6 +167,7 @@ Services/
  AuthService.cs
  ChatHistoryService.cs
  ILlmService.cs
+ NodeSuggestService.cs
  ServerLlmService.cs
  SystemPromptFactory.cs
 Settings/DynamoCopilotSettings.cs

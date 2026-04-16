@@ -16,6 +16,12 @@ using DynamoCopilot.GraphInterop;
 namespace DynamoCopilot.Extension.ViewModels
 {
     // ─────────────────────────────────────────────────────────────────────────────
+    // Panel mode enum
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    public enum PanelMode { Chat, NodeSuggest }
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // Per-message view model (unchanged)
     // ─────────────────────────────────────────────────────────────────────────────
 
@@ -62,6 +68,7 @@ namespace DynamoCopilot.Extension.ViewModels
         private readonly DynamoCopilotSettings _settings;
         private readonly AuthService           _authService;
         private readonly ServerLlmService      _llmService;
+        private readonly NodeSuggestService    _nodeSuggestService;
         private readonly ChatHistoryService    _historyService;
         private readonly ViewLoadedParams      _dynParams;
 
@@ -76,17 +83,21 @@ namespace DynamoCopilot.Extension.ViewModels
         private string _authError = string.Empty;
 
         // Login form fields (password handled in code-behind via PasswordBox)
-        private string _loginEmail = string.Empty;
+        private string _loginEmail    = string.Empty;
         private string _registerEmail = string.Empty;
 
         // ── User info panel ───────────────────────────────────────────────────────
 
         private bool   _showUserInfo;
-        private string _userEmail         = string.Empty;
+        private string _userEmail    = string.Empty;
         private int    _requestsUsed;
-        private int    _requestLimit       = 30;
+        private int    _requestLimit  = 30;
         private int    _tokensUsed;
-        private int    _tokenLimit         = 40000;
+        private int    _tokenLimit    = 40000;
+
+        // ── Panel mode ────────────────────────────────────────────────────────────
+
+        private PanelMode _mode = PanelMode.Chat;
 
         // ── Chat state ────────────────────────────────────────────────────────────
 
@@ -94,12 +105,40 @@ namespace DynamoCopilot.Extension.ViewModels
         private string _statusMessage = string.Empty;
         private bool   _showWelcome   = true;
 
+        // ── Node suggest state ────────────────────────────────────────────────────
+
+        private string _nodeQuery       = string.Empty;
+        private bool   _isSearchingNodes;
+
         public Action? RequestScrollToBottom { get; set; }
 
         // ── Bindable collections ─────────────────────────────────────────────────
 
-        public ObservableCollection<ChatMessageViewModel> Messages { get; }
+        public ObservableCollection<ChatMessageViewModel>    Messages        { get; }
             = new ObservableCollection<ChatMessageViewModel>();
+
+        public ObservableCollection<NodeSuggestionCardViewModel> NodeSuggestions { get; }
+            = new ObservableCollection<NodeSuggestionCardViewModel>();
+
+        // ── Mode bindings ─────────────────────────────────────────────────────────
+
+        public PanelMode CurrentMode
+        {
+            get => _mode;
+            private set
+            {
+                _mode = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsChatMode));
+                OnPropertyChanged(nameof(IsNodeMode));
+            }
+        }
+
+        public bool IsChatMode => _mode == PanelMode.Chat;
+        public bool IsNodeMode => _mode == PanelMode.NodeSuggest;
+
+        public void SwitchToChat()        => CurrentMode = PanelMode.Chat;
+        public void SwitchToNodeSuggest() => CurrentMode = PanelMode.NodeSuggest;
 
         // ── Auth bindings ─────────────────────────────────────────────────────────
 
@@ -211,20 +250,50 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _showWelcome = value; OnPropertyChanged(); }
         }
 
+        // ── Node suggest bindings ─────────────────────────────────────────────────
+
+        public string NodeQuery
+        {
+            get => _nodeQuery;
+            set { _nodeQuery = value; OnPropertyChanged(); }
+        }
+
+        public bool IsSearchingNodes
+        {
+            get => _isSearchingNodes;
+            private set
+            {
+                _isSearchingNodes = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanSearchNodes));
+                OnPropertyChanged(nameof(ShowNodeHint));
+            }
+        }
+
+        public bool CanSearchNodes => !_isSearchingNodes;
+
+        /// <summary>
+        /// True when the search input area should show its placeholder hint
+        /// (not searching and no results yet).
+        /// </summary>
+        public bool ShowNodeHint => !_isSearchingNodes && NodeSuggestions.Count == 0;
+
         // ── Construction ──────────────────────────────────────────────────────────
 
         public CopilotPanelViewModel(
             DynamoCopilotSettings settings,
             AuthService           authService,
             ServerLlmService      llmService,
+            NodeSuggestService    nodeSuggestService,
             ChatHistoryService    historyService,
             ViewLoadedParams      dynParams)
         {
-            _settings       = settings;
-            _authService    = authService;
-            _llmService     = llmService;
-            _historyService = historyService;
-            _dynParams      = dynParams;
+            _settings           = settings;
+            _authService        = authService;
+            _llmService         = llmService;
+            _nodeSuggestService = nodeSuggestService;
+            _historyService     = historyService;
+            _dynParams          = dynParams;
 
             _currentSession = _historyService.Load(GetCurrentGraphPath());
             _dynParams.CurrentWorkspaceChanged += OnWorkspaceChanged;
@@ -235,30 +304,19 @@ namespace DynamoCopilot.Extension.ViewModels
         /// <summary>
         /// Called once from DynamoCopilotViewExtension.Loaded().
         /// Checks stored tokens → if valid, transitions straight to chat.
-        /// All property changes happen on the UI thread via the dispatcher
-        /// so bindings update correctly.
         /// </summary>
         public async Task InitializeAsync()
         {
-            // TryLoadTokens is synchronous (just file I/O + date check)
             if (!_authService.TryLoadTokens())
-            {
-                // No tokens or refresh token expired — stay on login screen
                 return;
-            }
 
-            // Try to get a valid access token (refreshes if near-expiry)
             IsAuthBusy = true;
-            var token = await _authService.GetValidTokenAsync();
+            var token  = await _authService.GetValidTokenAsync();
             IsAuthBusy = false;
 
             if (string.IsNullOrEmpty(token))
-            {
-                // Refresh failed — back to login
                 return;
-            }
 
-            // Tokens are good → go straight to chat
             OnAuthSuccess();
         }
 
@@ -338,8 +396,8 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             _authService.Logout();
 
-            // Reset chat state
             Messages.Clear();
+            NodeSuggestions.Clear();
             ShowWelcome      = true;
             StatusMessage    = string.Empty;
             ShowUserInfo     = false;
@@ -348,6 +406,8 @@ namespace DynamoCopilot.Extension.ViewModels
             AuthError        = string.Empty;
             LoginEmail       = string.Empty;
             RegisterEmail    = string.Empty;
+            NodeQuery        = string.Empty;
+            CurrentMode      = PanelMode.Chat;
 
             _streamingCts?.Cancel();
         }
@@ -358,24 +418,22 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             ShowUserInfo = !ShowUserInfo;
 
-            // Refresh usage stats every time the panel opens
             if (ShowUserInfo)
                 await RefreshUserInfoAsync();
         }
 
         private async Task RefreshUserInfoAsync()
         {
-            // Show cached email immediately; live counts come from /api/me
             UserEmail = _authService.Email;
 
             var info = await _authService.GetUserInfoAsync();
             if (info == null) return;
 
-            UserEmail     = info.Email;
-            RequestsUsed  = info.DailyRequestCount;
-            RequestLimit  = info.EffectiveRequestLimit;
-            TokensUsed    = info.DailyTokenCount;
-            TokenLimit    = info.EffectiveTokenLimit;
+            UserEmail    = info.Email;
+            RequestsUsed = info.DailyRequestCount;
+            RequestLimit = info.EffectiveRequestLimit;
+            TokensUsed   = info.DailyTokenCount;
+            TokenLimit   = info.EffectiveTokenLimit;
         }
 
         // ── Chat actions ──────────────────────────────────────────────────────────
@@ -424,7 +482,6 @@ namespace DynamoCopilot.Extension.ViewModels
                 ex.Message.Contains("Session expired") ||
                 ex.Message.Contains("log in"))
             {
-                // Access + refresh token both failed — force re-login
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 Logout();
@@ -533,6 +590,53 @@ namespace DynamoCopilot.Extension.ViewModels
             _historyService.Save(_currentSession);
         }
 
+        // ── Node suggest actions ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Runs the node suggestion pipeline:
+        ///   1. Reads current graph node names (graph context).
+        ///   2. Calls the server (vector search → Gemini re-rank).
+        ///   3. Populates <see cref="NodeSuggestions"/>.
+        /// </summary>
+        public async Task SearchNodesAsync(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query) || _isSearchingNodes) return;
+
+            IsSearchingNodes = true;
+            NodeSuggestions.Clear();
+            OnPropertyChanged(nameof(ShowNodeHint));
+            ShowStatus("Searching nodes\u2026");
+
+            try
+            {
+                var graphContext = GetGraphNodeNames();
+                var results      = await _nodeSuggestService.SuggestAsync(query, graphContext);
+
+                foreach (var node in results)
+                    NodeSuggestions.Add(new NodeSuggestionCardViewModel(node));
+
+                StatusMessage = results.Count == 0
+                    ? "No matching nodes found."
+                    : $"Found {results.Count} node{(results.Count == 1 ? "" : "s")}.";
+            }
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("Session expired") ||
+                ex.Message.Contains("log in"))
+            {
+                Logout();
+                return;
+            }
+            catch (Exception ex)
+            {
+                ShowStatus($"Search failed: {ex.Message}");
+            }
+            finally
+            {
+                IsSearchingNodes = false;
+                OnPropertyChanged(nameof(ShowNodeHint));
+            }
+        }
+
         // ── Private helpers ────────────────────────────────────────────────────────
 
         private void OnAuthSuccess()
@@ -540,7 +644,6 @@ namespace DynamoCopilot.Extension.ViewModels
             UserEmail  = _authService.Email;
             IsLoggedIn = true;
             RestoreHistory();
-            // Load live usage counts in the background (non-blocking)
             _ = RefreshUserInfoAsync();
         }
 
@@ -606,6 +709,28 @@ namespace DynamoCopilot.Extension.ViewModels
             return _currentSession.PythonEngine;
         }
 
+        /// <summary>
+        /// Reads the NickName of every node currently in the workspace.
+        /// Returns null when the workspace is empty or inaccessible (server will skip context).
+        /// </summary>
+        private string[]? GetGraphNodeNames()
+        {
+            try
+            {
+                var wsVm  = GetCurrentWorkspaceViewModel();
+                if (wsVm == null) return null;
+
+                var names = GraphNodeReader.GetAllNodeNames(wsVm);
+                if (names.Count == 0) return null;
+
+                var arr = new string[names.Count];
+                for (int i = 0; i < names.Count; i++)
+                    arr[i] = names[i];
+                return arr;
+            }
+            catch { return null; }
+        }
+
         private string GetCurrentGraphPath()
         {
             try { return _dynParams.CurrentWorkspaceModel?.FileName ?? string.Empty; }
@@ -641,7 +766,7 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             try
             {
-                var app     = System.Windows.Application.Current;
+                var app = System.Windows.Application.Current;
                 if (app == null) return;
                 var toClose = new System.Collections.Generic.List<System.Windows.Window>();
                 foreach (System.Windows.Window win in app.Windows)

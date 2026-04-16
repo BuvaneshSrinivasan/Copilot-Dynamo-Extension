@@ -30,6 +30,7 @@ builder.Services.AddScoped<ILlmService, GeminiService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<EmbeddingService>();
 builder.Services.AddScoped<NodeSearchService>();
+builder.Services.AddScoped<NodeRerankService>();
 
 // UsageTracker is Scoped so GeminiService and RateLimitMiddleware share the
 // same instance within one request — GeminiService writes, middleware reads.

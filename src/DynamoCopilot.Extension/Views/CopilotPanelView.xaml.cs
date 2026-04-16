@@ -51,10 +51,42 @@ namespace DynamoCopilot.Extension.Views
         private void OnSignOutClick(object sender, RoutedEventArgs e)
         {
             _viewModel.Logout();
-            // Clear password boxes so they don't retain values after sign-out
             LoginPasswordBox.Clear();
             RegisterPasswordBox.Clear();
             RegisterConfirmPasswordBox.Clear();
+        }
+
+        // ── Mode toggle ───────────────────────────────────────────────────────
+
+        private void OnChatModeClick(object sender, RoutedEventArgs e)
+            => _viewModel.SwitchToChat();
+
+        private void OnNodeModeClick(object sender, RoutedEventArgs e)
+        {
+            _viewModel.SwitchToNodeSuggest();
+            // Give focus to the node query box when switching to node mode
+            NodeQueryBox.Focus();
+        }
+
+        // ── Node suggest ──────────────────────────────────────────────────────
+
+        private async void OnNodeSearchClick(object sender, RoutedEventArgs e)
+            => await RunNodeSearchAsync();
+
+        private async void OnNodeQueryKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                e.Handled = true;
+                await RunNodeSearchAsync();
+            }
+        }
+
+        private async System.Threading.Tasks.Task RunNodeSearchAsync()
+        {
+            var query = NodeQueryBox.Text.Trim();
+            if (string.IsNullOrEmpty(query)) return;
+            await _viewModel.SearchNodesAsync(query);
         }
 
         // ── Chat ──────────────────────────────────────────────────────────────
@@ -136,12 +168,6 @@ namespace DynamoCopilot.Extension.Views
             ChatScrollViewer.ScrollToBottom();
         }
 
-        // PreviewMouseWheel tunnels DOWN before any child can handle it.
-        // WPF's ScrollViewer (and TextBox) mark MouseWheel as handled even when
-        // they can't scroll in the requested direction — this swallows the event
-        // and the outer chat viewer never moves. By intercepting here we always
-        // scroll the chat viewer and mark the event handled so children don't
-        // double-consume it.
         private void OnChatPreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             ChatScrollViewer.ScrollToVerticalOffset(

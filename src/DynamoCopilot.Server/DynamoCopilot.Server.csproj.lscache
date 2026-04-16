@@ -60,6 +60,7 @@ Endpoints/
  AdminEndpoints.cs
  AuthEndpoints.cs
  ChatEndpoints.cs
+ NodeEndpoints.cs
  UserEndpoints.cs
 Middleware/RateLimitMiddleware.cs
 Migrations/
@@ -67,10 +68,13 @@ Migrations/
  20260411091017_InitialCreate.Designer.cs
  20260411093516_AddRefreshTokens.cs
  20260411093516_AddRefreshTokens.Designer.cs
+ 20260414101854_AddDynamoNodes.cs
+ 20260414101854_AddDynamoNodes.Designer.cs
  AppDbContextModelSnapshot.cs
 Models/
  AuthRequests.cs
  ChatRequest.cs
+ DynamoNode.cs
  RefreshToken.cs
  User.cs
 obj/Debug/net8.0/
@@ -79,8 +83,12 @@ obj/Debug/net8.0/
  DynamoCopilot.Server.GlobalUsings.g.cs
 Program.cs
 Services/
+ EmbeddingService.cs
  GeminiService.cs
  ILlmService.cs
+ NodeRerankService.cs
+ NodeSearchService.cs
+ OpenAiService.cs
  TokenService.cs
  UsageTracker.cs
 
@@ -402,6 +410,8 @@ Services/
  microsoft.identitymodel.tokens/7.1.2/lib/net8.0/Microsoft.IdentityModel.Tokens.dll
  npgsql.entityframeworkcore.postgresql/8.0.11/lib/net8.0/Npgsql.EntityFrameworkCore.PostgreSQL.dll
  npgsql/8.0.6/lib/net8.0/Npgsql.dll
+ pgvector.entityframeworkcore/0.2.2/lib/net8.0/Pgvector.EntityFrameworkCore.dll
+ pgvector/0.3.1/lib/net6.0/Pgvector.dll
  system.identitymodel.tokens.jwt/7.1.2/lib/net8.0/System.IdentityModel.Tokens.Jwt.dll
 
 [analyzerReferences]

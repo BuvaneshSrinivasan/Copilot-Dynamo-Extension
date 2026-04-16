@@ -6,48 +6,43 @@ namespace DynamoCopilot.Server.Services;
 
 // =============================================================================
 // EmbeddingService — Converts text into a 768-dimensional vector using
-// Google Gemini's text-embedding-004 model.
+// Ollama nomic-embed-text, which matches the model used by the node indexer.
 // =============================================================================
-// Used at query time by NodeSearchService to embed the user's search query
-// before performing cosine similarity search against the DynamoNodes table.
+// IMPORTANT: The DynamoNodes table was populated by the node indexer using
+// Ollama nomic-embed-text (768-dim). Query embeddings MUST use the same model
+// or cosine similarity will be meaningless (different vector spaces).
 // =============================================================================
 
 public class EmbeddingService
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _apiKey;
+    private readonly string _ollamaUrl;
 
-    // Dimension produced by text-embedding-004. Must match the vector(768)
+    // Dimension produced by nomic-embed-text. Must match the vector(768)
     // column in the DynamoNodes table.
     public const int Dimensions = 768;
+
+    private const string Model = "nomic-embed-text";
 
     public EmbeddingService(IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
         _httpClientFactory = httpClientFactory;
-        _apiKey = configuration["Gemini:ApiKey"]
-            ?? throw new InvalidOperationException("Gemini:ApiKey is not configured.");
+        _ollamaUrl = (configuration["Ollama:Url"] ?? "http://localhost:11434").TrimEnd('/');
     }
 
-    // Embeds a single text string. The query task type tells the model this
-    // vector will be used to search for similar documents (not as a document
-    // itself) — Gemini applies a query-optimised transformation.
+    // Embeds a single text string using Ollama's local nomic-embed-text model.
+    // Returns a 768-dimensional vector ready for pgvector cosine similarity search.
     public async Task<Vector> EmbedQueryAsync(string text, CancellationToken ct = default)
     {
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001" +
-                  $":embedContent?key={_apiKey}";
+        var url = $"{_ollamaUrl}/api/embeddings";
 
         var body = new
         {
-            model = "models/gemini-embedding-001",
-            content = new { parts = new[] { new { text } } },
-            taskType = "RETRIEVAL_QUERY",
-            outputDimensionality = 768   // must match the vector(768) column
+            model  = Model,
+            prompt = text
         };
 
-        var json = JsonSerializer.Serialize(body, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        var json = JsonSerializer.Serialize(body);
 
         var client = _httpClientFactory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -59,13 +54,12 @@ public class EmbeddingService
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(ct);
-            throw new HttpRequestException($"Gemini Embed API {(int)response.StatusCode}: {err}");
+            throw new HttpRequestException($"Ollama Embed API {(int)response.StatusCode}: {err}");
         }
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var values = doc.RootElement
             .GetProperty("embedding")
-            .GetProperty("values")
             .EnumerateArray()
             .Select(e => e.GetSingle())
             .ToArray();

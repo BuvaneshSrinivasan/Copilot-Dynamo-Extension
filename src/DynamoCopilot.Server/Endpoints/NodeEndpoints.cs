@@ -6,11 +6,10 @@ namespace DynamoCopilot.Server.Endpoints;
 // =============================================================================
 // NodeEndpoints — POST /api/nodes/suggest
 // =============================================================================
-// Accepts a natural-language query and returns ranked Dynamo node suggestions
-// from the indexed package ecosystem stored in PostgreSQL + pgvector.
-//
-// Requires a valid JWT (same as /api/chat/stream).
-// Phase B will add graph-context-aware re-ranking via Gemini.
+// Phase A: pure vector search (top N by cosine similarity).
+// Phase B: vector search fetches top 20, Gemini re-ranks to 5–8 with reasons.
+//          Accepts an optional GraphContext array so the re-ranker knows what
+//          nodes are already in the user's graph.
 // =============================================================================
 
 public static class NodeEndpoints
@@ -23,24 +22,31 @@ public static class NodeEndpoints
 
     private static async Task<IResult> HandleSuggestAsync(
         [FromBody] NodeSuggestRequest request,
-        NodeSearchService searchService,
-        CancellationToken ct)
+        NodeSearchService             searchService,
+        NodeRerankService             rerankService,
+        CancellationToken             ct)
     {
         if (string.IsNullOrWhiteSpace(request.Query))
             return Results.BadRequest(new { error = "query is required" });
 
-        var nodes = await searchService.SuggestAsync(
+        // ── 1. Hybrid search: top 40 candidates (vector + keyword, RRF merged) ─
+        var candidates = await searchService.SuggestAsync(request.Query, 40, ct);
+
+        // ── 2. Gemini re-rank: pick best 5–8 with reasons ────────────────────
+        var ranked = await rerankService.RerankAsync(
             request.Query,
-            request.Limit ?? 8,
+            candidates,
+            request.GraphContext,
             ct);
 
-        return Results.Ok(new { nodes });
+        return Results.Ok(new { nodes = ranked });
     }
 }
 
 // ── REQUEST DTO ───────────────────────────────────────────────────────────────
 
 public sealed record NodeSuggestRequest(
-    string Query,
-    int? Limit     // optional, defaults to 8, max 20
+    string    Query,
+    int?      Limit,          // kept for API compatibility; now ignored (always 20 candidates)
+    string[]? GraphContext     // names of nodes currently in the user's Dynamo graph
 );

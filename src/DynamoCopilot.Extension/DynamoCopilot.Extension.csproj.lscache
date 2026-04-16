@@ -65,7 +65,9 @@ obj/Debug/net48/
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
  Views/CopilotPanelView.g.cs
-ViewModels/CopilotPanelViewModel.cs
+ViewModels/
+ CopilotPanelViewModel.cs
+ NodeSuggestionCardViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]
@@ -201,7 +203,9 @@ obj/Debug/net8.0-windows/
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
  Views/CopilotPanelView.g.cs
-ViewModels/CopilotPanelViewModel.cs
+ViewModels/
+ CopilotPanelViewModel.cs
+ NodeSuggestionCardViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]
