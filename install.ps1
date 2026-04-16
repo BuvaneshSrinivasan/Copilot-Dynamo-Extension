@@ -69,15 +69,40 @@ foreach ($Tfm in @("net48", "net8.0-windows")) {
 
 Remove-Item $ExtractDir -Recurse -Force
 
-# ── Create settings.json if missing ──────────────────────────────────────────
+# ── Create / update settings.json ────────────────────────────────────────────
+# Always run after install to ensure useLocalServer is false and all fields exist.
+# Preserves user-customised values (e.g. maxHistoryMessages) when the file exists.
 
 $SettingsFile = Join-Path $DestBase "settings.json"
-if (-not (Test-Path $SettingsFile)) {
-    New-Item -ItemType Directory -Path $DestBase -Force | Out-Null
-    $DefaultSettings = @{
-        serverUrl          = "https://copilot-dynamo-extension-production.up.railway.app"
+New-Item -ItemType Directory -Path $DestBase -Force | Out-Null
+
+if (Test-Path $SettingsFile) {
+    # Merge: read existing, enforce required fields, write back
+    try   { $s = Get-Content $SettingsFile -Raw | ConvertFrom-Json }
+    catch { $s = [PSCustomObject]@{} }
+
+    # Always force these — installer must point at production
+    $s | Add-Member -Force -MemberType NoteProperty -Name useLocalServer  -Value $false
+    $s | Add-Member -Force -MemberType NoteProperty -Name serverUrl       -Value "https://radiant-determination-production.up.railway.app"
+
+    # Add missing fields without overwriting user values
+    if (-not $s.PSObject.Properties['maxHistoryMessages']) {
+        $s | Add-Member -MemberType NoteProperty -Name maxHistoryMessages -Value 40
+    }
+    if (-not $s.PSObject.Properties['localServerUrl']) {
+        $s | Add-Member -MemberType NoteProperty -Name localServerUrl -Value "http://localhost:8080"
+    }
+
+    $s | ConvertTo-Json -Depth 4 | Set-Content -Path $SettingsFile -Encoding UTF8
+    Write-Host "  settings.json updated: $SettingsFile" -ForegroundColor Green
+}
+else {
+    $DefaultSettings = [ordered]@{
+        serverUrl          = "https://radiant-determination-production.up.railway.app"
         maxHistoryMessages = 40
-    } | ConvertTo-Json -Depth 2
+        useLocalServer     = $false
+        localServerUrl     = "http://localhost:8080"
+    } | ConvertTo-Json -Depth 4
     Set-Content -Path $SettingsFile -Value $DefaultSettings -Encoding UTF8
     Write-Host "  settings.json created: $SettingsFile" -ForegroundColor Green
 }

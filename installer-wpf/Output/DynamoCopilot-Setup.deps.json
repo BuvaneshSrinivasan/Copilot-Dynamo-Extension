@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "DynamoCopilot-Setup/1.0.0": {
+        "runtime": {
+          "DynamoCopilot-Setup.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "DynamoCopilot-Setup/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

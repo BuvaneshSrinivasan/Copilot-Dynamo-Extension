@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dynamo ViewExtension manifest.
+  This file must be placed in: <DynamoInstallPath>\viewExtensions\
+  alongside the DynamoCopilot.Extension.dll.
+-->
+<ViewExtensionDefinition>
+  <AssemblyPath>DynamoCopilot.Extension.dll</AssemblyPath>
+  <TypeName>DynamoCopilot.Extension.DynamoCopilotViewExtension</TypeName>
+</ViewExtensionDefinition>

@@ -31,8 +31,8 @@ try {
 }
 
 # ── Determine which TFM to deploy based on Dynamo version ─────────────────────
-# Dynamo 2.x (Revit 2022-2023) uses .NET 4.8  → deploy net48 output
-# Dynamo 3.x (Revit 2024-2025) uses .NET 8    → deploy net8.0-windows output
+# Dynamo for Revit 2022-2024 uses .NET 4.8  → deploy net48 output
+# Dynamo for Revit 2025+     uses .NET 8    → deploy net8.0-windows output
 
 $tfmMap = @{
     "2.x" = "net48"
@@ -56,7 +56,7 @@ foreach ($year in $revitYears) {
     $dynPath = Join-Path $baseRevit "Revit $year\AddIns\DynamoForRevit"
     if (Test-Path $dynPath) {
         $viewExtDir = Join-Path $dynPath "viewExtensions"
-        $tfm = if ($year -ge 2024) { "net8.0-windows" } else { "net48" }
+        $tfm = if ($year -ge 2025) { "net8.0-windows" } else { "net48" }
         $targets.Add(@{ ViewExtDir = $viewExtDir; TFM = $tfm; Year = $year })
         Write-Host "Found Revit $year → $viewExtDir  [TFM: $tfm]"
     }
@@ -121,7 +121,6 @@ foreach ($t in $targets) {
             "DynamoCopilot.Extension.dll"
             "DynamoCopilot.Core.dll"
             "DynamoCopilot.GraphInterop.dll"
-            "DynamoCopilot_ViewExtensionDefinition.xml"
         )
 
         foreach ($f in $filesToCopy) {
@@ -133,6 +132,22 @@ foreach ($t in $targets) {
                 Write-Warning "  Missing: $f"
             }
         }
+
+        # ── Write ViewExtensionDefinition XML with absolute DLL path ──────────
+        # DLLs live in %AppData%\DynamoCopilot\<tfm>\ — use absolute path so
+        # Dynamo can find them regardless of where viewExtensions is located.
+        $AppData = [Environment]::GetFolderPath("ApplicationData")
+        $DllPath = Join-Path $AppData "DynamoCopilot\$($t.TFM)\DynamoCopilot.Extension.dll"
+        $XmlContent = @"
+<?xml version="1.0" encoding="utf-8"?>
+<ViewExtensionDefinition>
+  <AssemblyPath>$DllPath</AssemblyPath>
+  <TypeName>DynamoCopilot.Extension.DynamoCopilotViewExtension</TypeName>
+</ViewExtensionDefinition>
+"@
+        $XmlDest = Join-Path $dst "DynamoCopilot_ViewExtensionDefinition.xml"
+        Set-Content -Path $XmlDest -Value $XmlContent -Encoding UTF8
+        Write-Host "  Written: DynamoCopilot_ViewExtensionDefinition.xml"
     } else {
         Write-Host "  [DRY RUN] Would remove old files and copy new output to $dst"
     }

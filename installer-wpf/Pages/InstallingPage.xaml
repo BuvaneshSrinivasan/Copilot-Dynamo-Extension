@@ -1,0 +1,73 @@
+<UserControl x:Class="DynamoCopilot.Installer.Pages.InstallingPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <!-- Left accent stripe -->
+        <Border Width="4" HorizontalAlignment="Left">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#4F8EF7" Offset="0"/>
+                    <GradientStop Color="#6366F1" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <!-- Centred content -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="380" Margin="0,-10,0,0">
+
+            <!-- Heading -->
+            <TextBlock Text="Setting up DynamoCopilot"
+                       Foreground="#E2E8F8"
+                       FontFamily="Segoe UI Light"
+                       FontSize="26"
+                       FontWeight="Light"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,6"/>
+
+            <!-- Thin separator line -->
+            <Border Height="1" Margin="0,0,0,28">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                        <GradientStop Color="Transparent" Offset="0"/>
+                        <GradientStop Color="#1C2040"     Offset="0.3"/>
+                        <GradientStop Color="#1C2040"     Offset="0.7"/>
+                        <GradientStop Color="Transparent" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
+
+            <!-- Status label -->
+            <TextBlock x:Name="StatusText"
+                       Text="Preparing…"
+                       Foreground="#5A6899"
+                       FontFamily="Segoe UI"
+                       FontSize="13"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,16"/>
+
+            <!-- Progress bar -->
+            <ProgressBar x:Name="ProgressBar"
+                         Style="{StaticResource ModernBar}"
+                         Minimum="0" Maximum="100" Value="0"
+                         Margin="0,0,0,10"/>
+
+            <!-- Percent label -->
+            <TextBlock x:Name="PercentText"
+                       Text="0%"
+                       Foreground="#2E3860"
+                       FontFamily="Segoe UI"
+                       FontSize="11"
+                       HorizontalAlignment="Right"
+                       Margin="0,0,0,28"/>
+
+            <!-- Hint -->
+            <TextBlock Text="Please wait — this will only take a moment."
+                       Foreground="#2A3255"
+                       FontFamily="Segoe UI"
+                       FontSize="12"
+                       HorizontalAlignment="Center"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

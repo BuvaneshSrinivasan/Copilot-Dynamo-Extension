@@ -135,7 +135,7 @@ function Ensure-Settings {
 
     New-Item -ItemType Directory -Path $DestBase -Force | Out-Null
     $DefaultSettings = @{
-        serverUrl           = "https://copilot-dynamo-extension-production.up.railway.app"
+        serverUrl           = "https://radiant-determination-production.up.railway.app"
         maxHistoryMessages  = 40
         useLocalServer      = $false
         localServerUrl      = "http://localhost:8080"
@@ -180,9 +180,7 @@ function Set-LocalServerMode {
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 Ensure-Settings
-if ($UseLocalServer) {
-    Set-LocalServerMode -Enabled $true
-}
+Set-LocalServerMode -Enabled ([bool]$UseLocalServer)
 
 if ($TargetFramework -eq "both" -or $TargetFramework -eq "net48") {
     Build-And-Deploy "net48"

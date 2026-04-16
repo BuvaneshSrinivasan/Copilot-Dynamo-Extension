@@ -12,6 +12,7 @@ namespace DynamoCopilot.Extension
     {
         public string UniqueId => "7A3E2F14-C591-4D8B-A7F2-90B3E1D54C6A";
         public string Name     => "Dynamo Co-pilot";
+        private string TabName => "BimEra";
 
         private CopilotPanelViewModel? _viewModel;
         private CopilotPanelView?      _view;
@@ -37,8 +38,8 @@ namespace DynamoCopilot.Extension
             // Add "Copilot" menu entry to Dynamo's menu bar
             try
             {
-                var topMenu = new MenuItem { Header = "Copilot" };
-                _toggleMenuItem = new MenuItem { Header = "Dynamo Co-pilot" };
+                var topMenu = new MenuItem { Header = TabName };
+                _toggleMenuItem = new MenuItem { Header = Name };
                 _toggleMenuItem.Click += OnTogglePanel;
                 topMenu.Items.Add(_toggleMenuItem);
                 loadedParams.dynamoMenu.Items.Add(topMenu);

@@ -23,7 +23,7 @@ namespace DynamoCopilot.Core.Settings
         /// <summary>DynamoCopilot backend URL. Not shown to users.</summary>
         [JsonPropertyName("serverUrl")]
         public string ServerUrl { get; set; } =
-            "https://copilot-dynamo-extension-production.up.railway.app";
+            "https://radiant-determination-production.up.railway.app";
 
         /// <summary>How many past messages to include with each chat request.</summary>
         [JsonPropertyName("maxHistoryMessages")]

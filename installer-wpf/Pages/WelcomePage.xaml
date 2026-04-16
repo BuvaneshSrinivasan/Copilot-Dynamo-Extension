@@ -1,0 +1,121 @@
+<UserControl x:Class="DynamoCopilot.Installer.Pages.WelcomePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <!-- Left accent stripe -->
+        <Border Width="4" HorizontalAlignment="Left">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#4F8EF7" Offset="0"/>
+                    <GradientStop Color="#6366F1" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <!-- Main content – centred column -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Margin="0,-20,0,0">
+
+            <!-- ── Node-graph icon ── -->
+            <Viewbox Width="76" Height="76" HorizontalAlignment="Center"
+                     Margin="0,0,0,28">
+                <Canvas Width="76" Height="76">
+                    <!-- Connecting lines (drawn first so nodes sit on top) -->
+                    <Line X1="38" Y1="20" X2="18" Y2="52"
+                          Stroke="#2A3870" StrokeThickness="2.5"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <Line X1="38" Y1="20" X2="58" Y2="52"
+                          Stroke="#2A3870" StrokeThickness="2.5"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <Line X1="18" Y1="52" X2="58" Y2="52"
+                          Stroke="#2A3870" StrokeThickness="2"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+
+                    <!-- Top node (accent blue) -->
+                    <Ellipse Canvas.Left="26" Canvas.Top="8"
+                             Width="24" Height="24">
+                        <Ellipse.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop Color="#6AAEFF" Offset="0"/>
+                                <GradientStop Color="#4F8EF7" Offset="1"/>
+                            </RadialGradientBrush>
+                        </Ellipse.Fill>
+                        <Ellipse.Effect>
+                            <DropShadowEffect Color="#4F8EF7" BlurRadius="12"
+                                              ShadowDepth="0" Opacity="0.8"/>
+                        </Ellipse.Effect>
+                    </Ellipse>
+
+                    <!-- Bottom-left node (indigo) -->
+                    <Ellipse Canvas.Left="7" Canvas.Top="42"
+                             Width="22" Height="22">
+                        <Ellipse.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop Color="#818CF8" Offset="0"/>
+                                <GradientStop Color="#6366F1" Offset="1"/>
+                            </RadialGradientBrush>
+                        </Ellipse.Fill>
+                        <Ellipse.Effect>
+                            <DropShadowEffect Color="#6366F1" BlurRadius="10"
+                                              ShadowDepth="0" Opacity="0.7"/>
+                        </Ellipse.Effect>
+                    </Ellipse>
+
+                    <!-- Bottom-right node (cyan-blue) -->
+                    <Ellipse Canvas.Left="47" Canvas.Top="42"
+                             Width="22" Height="22">
+                        <Ellipse.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop Color="#38BEFF" Offset="0"/>
+                                <GradientStop Color="#1A9EE0" Offset="1"/>
+                            </RadialGradientBrush>
+                        </Ellipse.Fill>
+                        <Ellipse.Effect>
+                            <DropShadowEffect Color="#38BEFF" BlurRadius="10"
+                                              ShadowDepth="0" Opacity="0.7"/>
+                        </Ellipse.Effect>
+                    </Ellipse>
+                </Canvas>
+            </Viewbox>
+
+            <!-- ── App name ── -->
+            <TextBlock Text="DynamoCopilot"
+                       Foreground="#E2E8F8"
+                       FontFamily="Segoe UI Light"
+                       FontSize="32"
+                       FontWeight="Light"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,10">
+                <TextBlock.Effect>
+                    <DropShadowEffect Color="#4F8EF7" BlurRadius="22"
+                                      ShadowDepth="0" Opacity="0.18"/>
+                </TextBlock.Effect>
+            </TextBlock>
+
+            <!-- ── Tagline ── -->
+            <TextBlock Text="Your AI coding partner for Autodesk Dynamo"
+                       Foreground="#5A6899"
+                       FontFamily="Segoe UI"
+                       FontSize="13"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,36"/>
+
+            <!-- ── Install button ── -->
+            <Button x:Name="InstallBtn"
+                    Content="Install Now"
+                    Style="{StaticResource PrimaryBtn}"
+                    HorizontalAlignment="Center"
+                    Click="InstallBtn_Click"/>
+
+            <!-- ── Version / publisher ── -->
+            <TextBlock x:Name="VersionText"
+                       Text="v1.0.0 · BimEra"
+                       Foreground="#2E3860"
+                       FontFamily="Segoe UI"
+                       FontSize="11"
+                       HorizontalAlignment="Center"
+                       Margin="0,20,0,0"/>
+        </StackPanel>
+    </Grid>
+</UserControl>
