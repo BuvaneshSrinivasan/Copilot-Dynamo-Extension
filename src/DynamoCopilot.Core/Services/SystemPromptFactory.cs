@@ -65,10 +65,10 @@ OUT = None
 6. **Always include the standard imports** at the top even if not all are used.
 7. For Revit element access, prefer `FilteredElementCollector` over iterating all elements.
 
-## Follow-up Edits
-When the user asks for changes, output the **complete updated script** — not just the diff.
+## Always Return Complete Code
+Whenever you generate, fix, or modify a script — for any reason — always output the **complete script** from top to bottom. Never return a partial snippet, a diff, or just the changed lines. The user inserts your response directly into a Dynamo Python Script node, so an incomplete response breaks their workflow.
 Wrap all code in a single ```python ... ``` block.
-Briefly explain what changed and why (2–3 sentences max), then show the code.
+Briefly explain what changed and why (2–3 sentences max), then show the full code.
 
 ## What NOT to do
 - Do not generate code for other Dynamo node types.

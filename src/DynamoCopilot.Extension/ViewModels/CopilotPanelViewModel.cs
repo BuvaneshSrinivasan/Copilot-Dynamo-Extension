@@ -552,10 +552,38 @@ namespace DynamoCopilot.Extension.ViewModels
                     return;
                 }
 
-                var code    = PythonNodeInterop.GetScriptContent(node);
-                var message = string.IsNullOrWhiteSpace(code)
-                    ? $"The Python Script node returned this error:\n\n{error}\n\nPlease provide a fix."
-                    : $"The Python Script node returned this error:\n\n{error}\n\nHere is the current code:\n```python\n{code}\n```\n\nPlease fix the error.";
+                var code = PythonNodeInterop.GetScriptContent(node);
+
+                // Check whether the node code matches what we last generated and is still
+                // within the history window sent to the LLM. If so, skip re-sending the
+                // code — the LLM already has it in context from its previous response.
+                var (lastCode, lastCodeIndex) = GetLastGeneratedCode();
+                int historyStart = Math.Max(0, _currentSession.Messages.Count - _settings.MaxHistoryMessages);
+                bool codeInHistory  = lastCodeIndex >= historyStart;
+                bool codeUnchanged  = lastCode != null
+                                   && codeInHistory
+                                   && !string.IsNullOrWhiteSpace(code)
+                                   && NormalizeCode(code) == NormalizeCode(lastCode);
+
+                string message;
+                if (codeUnchanged)
+                {
+                    // Code is identical to what the LLM already sees in history — omit it.
+                    message = $"The Python Script node returned this error:\n\n{error}\n\n" +
+                              $"The code is unchanged from what you last generated. " +
+                              $"Please fix the error and return the complete fixed code in a single ```python ... ``` block.";
+                }
+                else if (string.IsNullOrWhiteSpace(code))
+                {
+                    message = $"The Python Script node returned this error:\n\n{error}\n\n" +
+                              $"Please provide the complete fixed code in a single ```python ... ``` block.";
+                }
+                else
+                {
+                    message = $"The Python Script node returned this error:\n\n{error}\n\n" +
+                              $"Here is the current code:\n```python\n{code}\n```\n\n" +
+                              $"Please fix the error and return the complete fixed code in a single ```python ... ``` block.";
+                }
 
                 await SendMessageAsync(message);
             }
@@ -697,6 +725,27 @@ namespace DynamoCopilot.Extension.ViewModels
                 result.Add(msgs[i]);
             return result;
         }
+
+        /// <summary>
+        /// Returns the CodeSnippet and session index of the most recent assistant message
+        /// that contains generated code. Returns (null, -1) when none exists.
+        /// </summary>
+        private (string? code, int index) GetLastGeneratedCode()
+        {
+            var msgs = _currentSession.Messages;
+            for (int i = msgs.Count - 1; i >= 0; i--)
+            {
+                if (msgs[i].Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(msgs[i].CodeSnippet))
+                    return (msgs[i].CodeSnippet, i);
+            }
+            return (null, -1);
+        }
+
+        /// <summary>
+        /// Normalises a Python code string for comparison: collapses line endings and trims whitespace.
+        /// </summary>
+        private static string NormalizeCode(string code) =>
+            code.Replace("\r\n", "\n").Replace("\r", "\n").Trim();
 
         private string DetectPythonEngine()
         {
