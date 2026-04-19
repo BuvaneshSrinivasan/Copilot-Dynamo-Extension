@@ -29,9 +29,55 @@ public static class PackageExtractor
         }
         catch
         {
-            // Silently skip corrupt or unreadable zips
             return [];
         }
+    }
+
+    /// <summary>
+    /// Extracts node records from an already-unpacked package folder.
+    /// Expects the standard Dynamo package layout: pkg.json + dyf/ + bin/.
+    /// </summary>
+    public static IReadOnlyList<NodeRecord> ExtractFromDirectory(string packageDir)
+    {
+        try
+        {
+            var pkgJsonPath = Path.Combine(packageDir, "pkg.json");
+            if (!File.Exists(pkgJsonPath)) return [];
+
+            var pkg = ReadPkgJsonFromFile(pkgJsonPath);
+            if (pkg.Name == null) return [];
+
+            var nodes = new List<NodeRecord>();
+
+            // ── DYF nodes ─────────────────────────────────────────────────────
+            var dyfDir = Path.Combine(packageDir, "dyf");
+            if (Directory.Exists(dyfDir))
+            {
+                foreach (var dyfFile in Directory.EnumerateFiles(dyfDir, "*.dyf"))
+                {
+                    var xml = ReadFileAsString(dyfFile);
+                    if (xml == null) continue;
+                    var node = DyfParser.Parse(xml, pkg.Name, pkg.Description ?? "", pkg.Keywords);
+                    if (node != null) nodes.Add(node);
+                }
+            }
+
+            // ── ZeroTouch XML doc nodes ───────────────────────────────────────
+            var binDir = Path.Combine(packageDir, "bin");
+            if (Directory.Exists(binDir))
+            {
+                foreach (var xmlFile in Directory.EnumerateFiles(binDir, "*.xml"))
+                {
+                    var xml = ReadFileAsString(xmlFile);
+                    if (xml == null) continue;
+                    var xmlNodes = XmlDocParser.Parse(xml, pkg.Name, pkg.Description ?? "", pkg.Keywords);
+                    nodes.AddRange(xmlNodes);
+                }
+            }
+
+            return nodes;
+        }
+        catch { return []; }
     }
 
     private static IReadOnlyList<NodeRecord> ExtractFromArchive(ZipArchive archive)
@@ -120,6 +166,41 @@ public static class PackageExtractor
             using var stream = entry.Open();
             using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
             return reader.ReadToEnd();
+        }
+        catch { return null; }
+    }
+
+    private static PkgInfo ReadPkgJsonFromFile(string filePath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(filePath);
+            using var doc    = JsonDocument.Parse(stream);
+            var root = doc.RootElement;
+
+            var name        = GetString(root, "name");
+            var description = GetString(root, "description");
+            var keywords    = root.TryGetProperty("keywords", out var kw) &&
+                              kw.ValueKind == JsonValueKind.Array
+                ? kw.EnumerateArray()
+                    .Where(k  => k.ValueKind == JsonValueKind.String)
+                    .Select(k => k.GetString() ?? "")
+                    .Where(k  => !string.IsNullOrWhiteSpace(k))
+                    .ToArray()
+                : [];
+
+            return new PkgInfo(name, description, keywords);
+        }
+        catch { return new PkgInfo(null, null, []); }
+    }
+
+    private static string? ReadFileAsString(string filePath)
+    {
+        const long maxBytes = 2 * 1024 * 1024;
+        try
+        {
+            if (new FileInfo(filePath).Length > maxBytes) return null;
+            return File.ReadAllText(filePath, Encoding.UTF8);
         }
         catch { return null; }
     }

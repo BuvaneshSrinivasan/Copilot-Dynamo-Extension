@@ -15,6 +15,13 @@
     <PackageReference Include="DynamoVisualProgramming.WpfUILibrary" Version="2.19.4" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- net48 needs explicit references for HttpClient and ZipArchive -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\DynamoCopilot.Core\DynamoCopilot.Core.csproj" />
     <ProjectReference Include="..\DynamoCopilot.GraphInterop\DynamoCopilot.GraphInterop.csproj" />

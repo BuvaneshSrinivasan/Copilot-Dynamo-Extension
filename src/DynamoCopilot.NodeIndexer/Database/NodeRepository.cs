@@ -30,6 +30,78 @@ public class NodeRepository : IDisposable
         _dataSource = dataSourceBuilder.Build();
     }
 
+    /// <summary>
+    /// Creates the pgvector extension and DynamoNodes table if they don't already exist.
+    /// Safe to call on every run — all statements use IF NOT EXISTS.
+    /// </summary>
+    public async Task EnsureSchemaAsync(CancellationToken ct = default)
+    {
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // pgvector extension (requires superuser or pg_extension privilege)
+        try
+        {
+            await using var cmd = new NpgsqlCommand(
+                "CREATE EXTENSION IF NOT EXISTS vector", conn);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch (NpgsqlException ex) when (ex.SqlState == "0A000")
+        {
+            throw new InvalidOperationException(
+                "pgvector extension binary is not installed on this PostgreSQL server.\n" +
+                "If using Docker, run:\n\n" +
+                "  docker run -d --name dynamo-pg \\\n" +
+                "    -e POSTGRES_PASSWORD=<your-password> \\\n" +
+                "    -e POSTGRES_DB=dynamocopilot_dev \\\n" +
+                "    -p 5432:5432 \\\n" +
+                "    pgvector/pgvector:pg17\n\n" +
+                "Then enable the extension manually once:\n" +
+                "  docker exec dynamo-pg psql -U postgres -d dynamocopilot_dev -c \"CREATE EXTENSION vector;\"\n\n" +
+                "Or install pgvector manually: https://github.com/pgvector/pgvector/releases", ex);
+        }
+
+        // Main nodes table
+        await using (var cmd = new NpgsqlCommand("""
+            CREATE TABLE IF NOT EXISTS "DynamoNodes" (
+                "Id"                 uuid         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+                "Name"               varchar(512) NOT NULL,
+                "PackageName"        varchar(256) NOT NULL,
+                "Description"        varchar(4000),
+                "Category"           varchar(512),
+                "PackageDescription" varchar(4000),
+                "Keywords"           text[],
+                "InputPorts"         text[],
+                "OutputPorts"        text[],
+                "NodeType"           varchar(32)  NOT NULL DEFAULT '',
+                "Embedding"          vector(768),
+                "IndexedAt"          timestamp    NOT NULL DEFAULT NOW(),
+                CONSTRAINT "UQ_DynamoNodes_PkgName" UNIQUE ("PackageName", "Name")
+            )
+            """, conn))
+            await cmd.ExecuteNonQueryAsync(ct);
+
+        // IVFFlat index for fast vector search (only if table has data; skip if empty)
+        await using (var cmd = new NpgsqlCommand("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE tablename = 'DynamoNodes'
+                      AND indexname  = 'IX_DynamoNodes_Embedding'
+                ) THEN
+                    IF (SELECT COUNT(*) FROM "DynamoNodes") > 0 THEN
+                        CREATE INDEX "IX_DynamoNodes_Embedding"
+                            ON "DynamoNodes"
+                            USING ivfflat ("Embedding" vector_cosine_ops)
+                            WITH (lists = 100);
+                    END IF;
+                END IF;
+            END
+            $$
+            """, conn))
+            await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     // Returns all (PackageName, NodeName) pairs already present in the DB.
     // The orchestrator uses this set to skip nodes that don't need re-indexing.
     public async Task<HashSet<(string PackageName, string Name)>> LoadIndexedKeysAsync(

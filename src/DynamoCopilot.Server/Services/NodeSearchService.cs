@@ -1,6 +1,7 @@
 using DynamoCopilot.Server.Data;
 using DynamoCopilot.Server.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Pgvector.EntityFrameworkCore;
 
 namespace DynamoCopilot.Server.Services;
@@ -21,15 +22,15 @@ namespace DynamoCopilot.Server.Services;
 
 public class NodeSearchService
 {
-    private readonly AppDbContext _db;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly EmbeddingService _embeddingService;
 
     // RRF constant — standard value; dampens the effect of rank differences
     private const int RrfK = 60;
 
-    public NodeSearchService(AppDbContext db, EmbeddingService embeddingService)
+    public NodeSearchService(IDbContextFactory<AppDbContext> dbFactory, EmbeddingService embeddingService)
     {
-        _db = db;
+        _dbFactory = dbFactory;
         _embeddingService = embeddingService;
     }
 
@@ -54,19 +55,22 @@ public class NodeSearchService
         var keywordResults = keywordTask.Result;
 
         // ── RECIPROCAL RANK FUSION ────────────────────────────────────────────
-        // score(d) = Σ 1 / (k + rank_i(d))   where rank is 1-based
+        // Use PackageName::Name as composite key — same node name can exist in
+        // multiple packages (e.g. "GetSheets" in Rhythm and Springs).
+        static string NodeKey(NodeSuggestion n) => $"{n.PackageName}::{n.Name}";
+
         var scores = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
         for (int i = 0; i < vectorResults.Count; i++)
         {
-            var key = vectorResults[i].Name;
+            var key = NodeKey(vectorResults[i]);
             scores.TryAdd(key, 0);
             scores[key] += 1.0 / (RrfK + i + 1);
         }
 
         for (int i = 0; i < keywordResults.Count; i++)
         {
-            var key = keywordResults[i].Name;
+            var key = NodeKey(keywordResults[i]);
             scores.TryAdd(key, 0);
             scores[key] += 1.0 / (RrfK + i + 1);
         }
@@ -74,18 +78,16 @@ public class NodeSearchService
         // Merge unique nodes from both result sets
         var allNodes = vectorResults
             .Concat(keywordResults)
-            .GroupBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(NodeKey, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
             .ToList();
 
         return allNodes
-            .OrderByDescending(n => scores.TryGetValue(n.Name, out var s) ? s : 0)
+            .OrderByDescending(n => scores.TryGetValue(NodeKey(n), out var s) ? s : 0)
             .Take(limit)
-            .Select((n, idx) => n with
+            .Select(n => n with
             {
-                // Normalise score: RRF doesn't produce a probability; map to [0,1]
-                // by dividing by the theoretical max (two first-rank hits)
-                Score = (float)(scores.TryGetValue(n.Name, out var s) ? s : 0)
+                Score = (float)(scores.TryGetValue(NodeKey(n), out var s) ? s : 0)
             })
             .ToList();
     }
@@ -97,11 +99,13 @@ public class NodeSearchService
     {
         var queryVector = await _embeddingService.EmbedQueryAsync(query, ct);
 
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
         // IVFFlat cosine similarity — higher probes = better recall
-        await _db.Database.ExecuteSqlRawAsync(
+        await db.Database.ExecuteSqlRawAsync(
             "SET LOCAL ivfflat.probes = 10", ct);
 
-        var rows = await _db.DynamoNodes
+        var rows = await db.DynamoNodes
             .Where(n => n.Embedding != null)
             .OrderBy(n => n.Embedding!.CosineDistance(queryVector))
             .Take(limit)
@@ -113,6 +117,7 @@ public class NodeSearchService
                 n.Description,
                 n.InputPorts,
                 n.OutputPorts,
+                n.NodeType,
                 Distance = n.Embedding!.CosineDistance(queryVector)
             })
             .ToListAsync(ct);
@@ -125,6 +130,7 @@ public class NodeSearchService
             Description = r.Description,
             InputPorts  = r.InputPorts  ?? Array.Empty<string>(),
             OutputPorts = r.OutputPorts ?? Array.Empty<string>(),
+            NodeType    = r.NodeType,
             Score       = 1f - (float)r.Distance
         }).ToList();
     }
@@ -153,12 +159,12 @@ public class NodeSearchService
         if (string.IsNullOrWhiteSpace(safeQuery))
             return new List<NodeSuggestion>();
 
-        // Step 1: rank matching node names using full-text search + camel-case split
-        // plainto_tsquery is injection-safe: it converts arbitrary text to a tsquery
-        // without allowing operator injection.
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
         var rankSql = @"
             SELECT
                 n.""Name"" AS ""Name"",
+                n.""PackageName"" AS ""PackageName"",
                 ts_rank(
                     to_tsvector('english',
                         regexp_replace(n.""Name"", '([a-z])([A-Z])', '\1 \2', 'g') || ' ' ||
@@ -177,25 +183,30 @@ public class NodeSearchService
             ORDER BY ""Rank"" DESC
             LIMIT {1}";
 
-        var nameRanks = await _db.Database
+        var nameRanks = await db.Database
             .SqlQueryRaw<NameRankRow>(rankSql, safeQuery, limit)
             .ToListAsync(ct);
 
         if (nameRanks.Count == 0)
             return new List<NodeSuggestion>();
 
-        // Step 2: fetch full node data for the matched names
-        var names = nameRanks.Select(r => r.Name).ToList();
-        var nodes = await _db.DynamoNodes
-            .Where(n => names.Contains(n.Name))
+        // Step 2: fetch full node data — match on composite (PackageName, Name)
+        var namePairs = nameRanks.Select(r => new { r.PackageName, r.Name }).ToList();
+        var pkgNames  = namePairs.Select(p => p.PackageName).Distinct().ToList();
+        var nodeNames = namePairs.Select(p => p.Name).Distinct().ToList();
+
+        var nodes = await db.DynamoNodes
+            .Where(n => pkgNames.Contains(n.PackageName) && nodeNames.Contains(n.Name))
             .ToListAsync(ct);
 
-        // Build a rank lookup for ordering
+        // Build rank lookup keyed by PackageName::Name
         var rankLookup = nameRanks.ToDictionary(
-            r => r.Name, r => r.Rank, StringComparer.OrdinalIgnoreCase);
+            r => $"{r.PackageName}::{r.Name}",
+            r => r.Rank,
+            StringComparer.OrdinalIgnoreCase);
 
         return nodes
-            .OrderByDescending(n => rankLookup.TryGetValue(n.Name, out var r) ? r : 0f)
+            .OrderByDescending(n => rankLookup.TryGetValue($"{n.PackageName}::{n.Name}", out var r) ? r : 0f)
             .Select(n => new NodeSuggestion
             {
                 Name        = n.Name,
@@ -204,7 +215,8 @@ public class NodeSearchService
                 Description = n.Description,
                 InputPorts  = n.InputPorts  ?? Array.Empty<string>(),
                 OutputPorts = n.OutputPorts ?? Array.Empty<string>(),
-                Score       = rankLookup.TryGetValue(n.Name, out var r) ? r : 0f
+                NodeType    = n.NodeType,
+                Score       = rankLookup.TryGetValue($"{n.PackageName}::{n.Name}", out var r) ? r : 0f
             })
             .ToList();
     }
@@ -213,8 +225,9 @@ public class NodeSearchService
     // so Npgsql's SqlQueryRaw can map them without custom type converters.
     private sealed class NameRankRow
     {
-        public string Name { get; set; } = "";
-        public float  Rank { get; set; }
+        public string Name        { get; set; } = "";
+        public string PackageName { get; set; } = "";
+        public float  Rank        { get; set; }
     }
 }
 
@@ -227,6 +240,7 @@ public sealed record NodeSuggestion
     public string?  Description { get; init; }
     public string[] InputPorts  { get; init; } = Array.Empty<string>();
     public string[] OutputPorts { get; init; } = Array.Empty<string>();
+    public string   NodeType    { get; init; } = "";
 
     // Cosine similarity in [0, 1] — higher is more relevant
     public float Score { get; init; }

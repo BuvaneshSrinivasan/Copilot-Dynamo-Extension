@@ -68,7 +68,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
-                                                    Grid.Column="0" CanContentScroll="True"/>
+                                                    Grid.Column="0" CanContentScroll="False"/>
                             <ScrollBar x:Name="PART_VerticalScrollBar"
                                        Grid.Column="1"
                                        Orientation="Vertical"
@@ -1114,16 +1114,22 @@
                                                     BorderThickness="1"
                                                     Padding="8,6"
                                                     Visibility="{Binding HasReason, Converter={StaticResource BoolToVis}}">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="&#x2728; "
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0"
+                                                               Text="&#x2728; "
                                                                FontSize="12"
                                                                VerticalAlignment="Top"/>
-                                                    <TextBlock Text="{Binding Reason}"
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding Reason}"
                                                                Foreground="{StaticResource TextBrush}"
                                                                FontSize="12"
                                                                FontStyle="Italic"
                                                                TextWrapping="Wrap"/>
-                                                </StackPanel>
+                                                </Grid>
                                             </Border>
 
                                             <!-- Expand / collapse toggle -->
@@ -1210,6 +1216,98 @@
                                                                TextWrapping="Wrap"/>
                                                 </Grid>
                                             </StackPanel>
+
+                                            <!-- Status message (errors / progress) -->
+                                            <TextBlock Margin="10,0,10,4"
+                                                       Text="{Binding StatusText}"
+                                                       FontSize="11"
+                                                       Foreground="#E07070"
+                                                       TextWrapping="Wrap"
+                                                       Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
+
+                                            <!-- Action buttons row -->
+                                            <Grid Margin="10,4,10,10">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Bottom-left: Insert -->
+                                                <Button Grid.Column="0"
+                                                        Command="{Binding InsertCommand}"
+                                                        Content="Insert"
+                                                        Padding="10,4"
+                                                        FontSize="12"
+                                                        Cursor="Hand">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="Background"   Value="#1A6E3C"/>
+                                                            <Setter Property="Foreground"   Value="#FFFFFF"/>
+                                                            <Setter Property="BorderThickness" Value="0"/>
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <Border Background="{TemplateBinding Background}"
+                                                                                CornerRadius="5"
+                                                                                Padding="{TemplateBinding Padding}">
+                                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                                              VerticalAlignment="Center"/>
+                                                                        </Border>
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                            <Style.Triggers>
+                                                                <Trigger Property="IsEnabled" Value="False">
+                                                                    <Setter Property="Background" Value="#1E3A2A"/>
+                                                                    <Setter Property="Foreground" Value="#4A7A5A"/>
+                                                                </Trigger>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="#22924F"/>
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+
+                                                <!-- Bottom-right: Download -->
+                                                <Button Grid.Column="2"
+                                                        Command="{Binding DownloadCommand}"
+                                                        Content="Download"
+                                                        Padding="10,4"
+                                                        FontSize="12"
+                                                        Cursor="Hand">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="Background"   Value="#1A3A6E"/>
+                                                            <Setter Property="Foreground"   Value="#FFFFFF"/>
+                                                            <Setter Property="BorderThickness" Value="0"/>
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <Border Background="{TemplateBinding Background}"
+                                                                                CornerRadius="5"
+                                                                                Padding="{TemplateBinding Padding}">
+                                                                            <ContentPresenter HorizontalAlignment="Center"
+                                                                                              VerticalAlignment="Center"/>
+                                                                        </Border>
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                            <Style.Triggers>
+                                                                <Trigger Property="IsEnabled" Value="False">
+                                                                    <Setter Property="Background" Value="#1A2A3A"/>
+                                                                    <Setter Property="Foreground" Value="#4A6A8A"/>
+                                                                </Trigger>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="#1E4A92"/>
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+
+                                            </Grid>
 
                                         </StackPanel>
                                     </Border>

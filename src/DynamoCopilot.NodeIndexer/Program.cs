@@ -69,36 +69,72 @@ Console.WriteLine("OK (nomic-embed-text ready)");
 
 // ── PHASE 1: EXTRACTION (parallel) ───────────────────────────────────────────
 
-var zipFiles = Directory.GetFiles(packagesDir, "*.zip");
-Console.WriteLine($"\nFound {zipFiles.Length:N0} zip files in {packagesDir}");
+var zipFiles    = Directory.GetFiles(packagesDir, "*.zip");
+var packageDirs = zipFiles.Length == 0
+    ? Directory.GetDirectories(packagesDir)
+        .Where(d => File.Exists(Path.Combine(d, "pkg.json")))
+        .ToArray()
+    : Array.Empty<string>();
+
+bool usingFolders = zipFiles.Length == 0 && packageDirs.Length > 0;
+int  totalItems   = usingFolders ? packageDirs.Length : zipFiles.Length;
+
+Console.WriteLine(usingFolders
+    ? $"\nFound {totalItems:N0} unpacked package folders in {packagesDir}"
+    : $"\nFound {totalItems:N0} zip files in {packagesDir}");
 Console.WriteLine("\nPhase 1/3 — Extracting node metadata from packages...");
 
 var allRecords = new System.Collections.Concurrent.ConcurrentBag<NodeRecord>();
 var extracted  = 0;
 
-await Parallel.ForEachAsync(
-    zipFiles,
-    new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2, CancellationToken = ct },
-    (zipPath, _) =>
-    {
-        var records = PackageExtractor.ExtractFromZip(zipPath);
-        foreach (var r in records) allRecords.Add(r);
+if (usingFolders)
+{
+    await Parallel.ForEachAsync(
+        packageDirs,
+        new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2, CancellationToken = ct },
+        (dir, _) =>
+        {
+            var records = PackageExtractor.ExtractFromDirectory(dir);
+            foreach (var r in records) allRecords.Add(r);
 
-        var count = Interlocked.Increment(ref extracted);
-        if (count % 250 == 0 || count == zipFiles.Length)
-            WriteProgress($"  {count:N0}/{zipFiles.Length:N0} packages scanned, {allRecords.Count:N0} nodes found");
+            var count = Interlocked.Increment(ref extracted);
+            if (count % 250 == 0 || count == totalItems)
+                WriteProgress($"  {count:N0}/{totalItems:N0} packages scanned, {allRecords.Count:N0} nodes found");
 
-        return ValueTask.CompletedTask;
-    });
+            return ValueTask.CompletedTask;
+        });
+}
+else
+{
+    await Parallel.ForEachAsync(
+        zipFiles,
+        new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount * 2, CancellationToken = ct },
+        (zipPath, _) =>
+        {
+            var records = PackageExtractor.ExtractFromZip(zipPath);
+            foreach (var r in records) allRecords.Add(r);
 
-Console.WriteLine($"\n  Extraction complete: {allRecords.Count:N0} nodes from {zipFiles.Length:N0} packages");
+            var count = Interlocked.Increment(ref extracted);
+            if (count % 250 == 0 || count == totalItems)
+                WriteProgress($"  {count:N0}/{totalItems:N0} packages scanned, {allRecords.Count:N0} nodes found");
+
+            return ValueTask.CompletedTask;
+        });
+}
+
+Console.WriteLine($"\n  Extraction complete: {allRecords.Count:N0} nodes from {totalItems:N0} packages");
 
 // ── PHASE 2: SKIP ALREADY-INDEXED ────────────────────────────────────────────
 
 Console.WriteLine("\nPhase 2/3 — Checking which nodes are already in the database...");
 
-using var repo       = new NodeRepository(connString);
-var indexedKeys      = await repo.LoadIndexedKeysAsync(ct);
+using var repo = new NodeRepository(connString);
+
+Console.Write("  Ensuring schema exists... ");
+await repo.EnsureSchemaAsync(ct);
+Console.WriteLine("OK");
+
+var indexedKeys = await repo.LoadIndexedKeysAsync(ct);
 var deduped          = allRecords
     .Where(r => !indexedKeys.Contains((r.PackageName, r.Name)))
     .GroupBy(r => (r.PackageName, r.Name))

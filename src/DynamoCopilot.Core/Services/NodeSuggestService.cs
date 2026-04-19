@@ -142,7 +142,8 @@ namespace DynamoCopilot.Core.Services
                     InputPorts  = GetStrArr(n, "inputPorts"),
                     OutputPorts = GetStrArr(n, "outputPorts"),
                     Score       = GetFloat(n, "score"),
-                    Reason      = GetStr(n, "reason")
+                    Reason      = GetStr(n, "reason"),
+                    NodeType    = GetStr(n, "nodeType")
                 });
             }
 

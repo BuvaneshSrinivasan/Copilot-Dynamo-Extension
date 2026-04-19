@@ -11,6 +11,7 @@ using Dynamo.Wpf.Extensions;
 using DynamoCopilot.Core.Models;
 using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Settings;
+using DynamoCopilot.Extension.Services;
 using DynamoCopilot.GraphInterop;
 
 namespace DynamoCopilot.Extension.ViewModels
@@ -65,12 +66,14 @@ namespace DynamoCopilot.Extension.ViewModels
 
     public sealed class CopilotPanelViewModel : INotifyPropertyChanged
     {
-        private readonly DynamoCopilotSettings _settings;
-        private readonly AuthService           _authService;
-        private readonly ServerLlmService      _llmService;
-        private readonly NodeSuggestService    _nodeSuggestService;
-        private readonly ChatHistoryService    _historyService;
-        private readonly ViewLoadedParams      _dynParams;
+        private readonly DynamoCopilotSettings   _settings;
+        private readonly AuthService             _authService;
+        private readonly ServerLlmService        _llmService;
+        private readonly NodeSuggestService      _nodeSuggestService;
+        private readonly ChatHistoryService      _historyService;
+        private readonly ViewLoadedParams        _dynParams;
+        private readonly PackageStateService     _packageState;
+        private readonly DynamoPackageDownloader _downloader;
 
         private ChatSession _currentSession;
         private CancellationTokenSource? _streamingCts;
@@ -281,12 +284,14 @@ namespace DynamoCopilot.Extension.ViewModels
         // ── Construction ──────────────────────────────────────────────────────────
 
         public CopilotPanelViewModel(
-            DynamoCopilotSettings settings,
-            AuthService           authService,
-            ServerLlmService      llmService,
-            NodeSuggestService    nodeSuggestService,
-            ChatHistoryService    historyService,
-            ViewLoadedParams      dynParams)
+            DynamoCopilotSettings    settings,
+            AuthService              authService,
+            ServerLlmService         llmService,
+            NodeSuggestService       nodeSuggestService,
+            ChatHistoryService       historyService,
+            ViewLoadedParams         dynParams,
+            PackageStateService      packageState,
+            DynamoPackageDownloader  downloader)
         {
             _settings           = settings;
             _authService        = authService;
@@ -294,6 +299,8 @@ namespace DynamoCopilot.Extension.ViewModels
             _nodeSuggestService = nodeSuggestService;
             _historyService     = historyService;
             _dynParams          = dynParams;
+            _packageState       = packageState;
+            _downloader         = downloader;
 
             _currentSession = _historyService.Load(GetCurrentGraphPath());
             _dynParams.CurrentWorkspaceChanged += OnWorkspaceChanged;
@@ -631,6 +638,7 @@ namespace DynamoCopilot.Extension.ViewModels
             if (string.IsNullOrWhiteSpace(query) || _isSearchingNodes) return;
 
             IsSearchingNodes = true;
+            foreach (var card in NodeSuggestions) card.Dispose();
             NodeSuggestions.Clear();
             OnPropertyChanged(nameof(ShowNodeHint));
             ShowStatus("Searching nodes\u2026");
@@ -641,7 +649,11 @@ namespace DynamoCopilot.Extension.ViewModels
                 var results      = await _nodeSuggestService.SuggestAsync(query, graphContext);
 
                 foreach (var node in results)
-                    NodeSuggestions.Add(new NodeSuggestionCardViewModel(node));
+                    NodeSuggestions.Add(new NodeSuggestionCardViewModel(
+                        node,
+                        _packageState,
+                        _downloader,
+                        InsertNodeToCanvas));
 
                 StatusMessage = results.Count == 0
                     ? "No matching nodes found."
@@ -663,6 +675,103 @@ namespace DynamoCopilot.Extension.ViewModels
                 IsSearchingNodes = false;
                 OnPropertyChanged(nameof(ShowNodeHint));
             }
+        }
+
+        // ── Node insertion ────────────────────────────────────────────────────────
+
+        private bool InsertNodeToCanvas(NodeSuggestion node)
+        {
+            try
+            {
+                var model = GetDynamoModel();
+                if (model == null) return false;
+
+                var packageFolderPath = _packageState.GetPackageFolderPath(node.PackageName);
+                var (cx, cy) = GetCanvasCenter();
+
+                var ok = DynamoCopilot.GraphInterop.GraphNodeInserter.InsertNode(
+                    model,
+                    node.Name,
+                    node.PackageName,
+                    node.NodeType,
+                    packageFolderPath,
+                    cx, cy);
+
+                if (ok) ShowStatus($"Inserted \"{node.Name}\" onto the canvas.");
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                ShowStatus($"Insert failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns the canvas coordinates of the centre of the currently visible workspace area.
+        /// Uses WorkspaceViewModel.X/Y (pan offset) and Zoom to convert viewport centre → canvas coords.
+        /// Falls back to (0, 0) when any value cannot be read.
+        /// </summary>
+        private (double x, double y) GetCanvasCenter()
+        {
+            try
+            {
+                var wsVm = GetCurrentWorkspaceViewModel();
+                if (wsVm == null) return (0, 0);
+
+                var flags = System.Reflection.BindingFlags.Public |
+                            System.Reflection.BindingFlags.Instance;
+
+                double panX = 0, panY = 0, zoom = 1.0;
+                try { panX = Convert.ToDouble(wsVm.GetType().GetProperty("X",    flags)?.GetValue(wsVm) ?? 0.0); } catch { }
+                try { panY = Convert.ToDouble(wsVm.GetType().GetProperty("Y",    flags)?.GetValue(wsVm) ?? 0.0); } catch { }
+                try { zoom = Convert.ToDouble(wsVm.GetType().GetProperty("Zoom", flags)?.GetValue(wsVm) ?? 1.0); } catch { }
+                if (zoom <= 0) zoom = 1.0;
+
+                // Try to find the WorkspaceView panel dimensions via WPF visual tree.
+                double viewW = 1000, viewH = 600;
+                try
+                {
+                    var app = System.Windows.Application.Current;
+                    if (app != null)
+                    {
+                        foreach (System.Windows.Window win in app.Windows)
+                        {
+                            var candidate = FindDescendantByTypeName(win, "WorkspaceView");
+                            if (candidate is System.Windows.FrameworkElement fe &&
+                                fe.ActualWidth > 0 && fe.ActualHeight > 0)
+                            {
+                                viewW = fe.ActualWidth;
+                                viewH = fe.ActualHeight;
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // Canvas coord of viewport centre:
+                //   screenPt = panOffset + canvasPt * zoom
+                //   canvasPt = (screenPt - panOffset) / zoom
+                var cx = (viewW / 2.0 - panX) / zoom;
+                var cy = (viewH / 2.0 - panY) / zoom;
+                return (cx, cy);
+            }
+            catch { return (0, 0); }
+        }
+
+        private static System.Windows.DependencyObject? FindDescendantByTypeName(
+            System.Windows.DependencyObject parent, string typeName)
+        {
+            var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child?.GetType().Name == typeName) return child;
+                var result = FindDescendantByTypeName(child!, typeName);
+                if (result != null) return result;
+            }
+            return null;
         }
 
         // ── Private helpers ────────────────────────────────────────────────────────

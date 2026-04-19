@@ -39,9 +39,14 @@ builder.Services.AddScoped<UsageTracker>();
 // DATABASE
 // UseVector() enables pgvector support in Npgsql — must be called here on the
 // NpgsqlDbContextOptionsBuilder so the Vector type is registered with the type mapper.
+var connStr = ResolveConnectionString(builder.Configuration);
 builder.Services.AddDbContext<AppDbContext>(opts =>
-    opts.UseNpgsql(ResolveConnectionString(builder.Configuration),
-        npgsql => npgsql.UseVector()));
+    opts.UseNpgsql(connStr, npgsql => npgsql.UseVector()));
+
+// Factory lets NodeSearchService create short-lived, independent DbContext instances
+// for parallel vector + keyword searches without EF Core concurrency violations.
+builder.Services.AddDbContextFactory<AppDbContext>(opts =>
+    opts.UseNpgsql(connStr, npgsql => npgsql.UseVector()), ServiceLifetime.Scoped);
 
 // JWT AUTHENTICATION
 // ─────────────────────────────────────────────────────────────────────────────

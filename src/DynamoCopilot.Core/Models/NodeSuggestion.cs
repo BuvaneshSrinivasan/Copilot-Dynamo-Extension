@@ -25,5 +25,8 @@ namespace DynamoCopilot.Core.Models
         /// Empty when the re-ranker fell back due to a Gemini API error.
         /// </summary>
         public string Reason { get; set; } = string.Empty;
+
+        /// <summary>"DYF", "ZeroTouch", or "XmlDoc" — used to decide how to insert the node.</summary>
+        public string NodeType { get; set; } = string.Empty;
     }
 }

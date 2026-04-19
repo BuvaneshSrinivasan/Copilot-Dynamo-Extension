@@ -123,7 +123,7 @@ public class NodeRerankService
         }
 
         sb.AppendLine();
-        sb.AppendLine("Select the 5 to 8 most useful nodes for the user's goal.");
+        sb.AppendLine("Select the 10 to 15 most useful nodes for the user's goal.");
         sb.AppendLine("Return ONLY a valid JSON array — no markdown, no commentary:");
         sb.AppendLine("[{\"index\": <number>, \"reason\": \"<one short sentence>\"}, ...]");
 
@@ -233,7 +233,7 @@ public class NodeRerankService
     private static List<NodeSuggestionWithReason> FallbackTop8(IReadOnlyList<NodeSuggestion> candidates)
     {
         var result = new List<NodeSuggestionWithReason>();
-        int limit  = Math.Min(candidates.Count, 8);
+        int limit  = Math.Min(candidates.Count, 15);
         for (int i = 0; i < limit; i++)
             result.Add(ToWithReason(candidates[i], string.Empty));
         return result;
@@ -249,6 +249,7 @@ public class NodeRerankService
             InputPorts  = c.InputPorts  ?? Array.Empty<string>(),
             OutputPorts = c.OutputPorts ?? Array.Empty<string>(),
             Score       = c.Score,
+            NodeType    = c.NodeType,
             Reason      = reason
         };
 }
@@ -264,6 +265,7 @@ public sealed record NodeSuggestionWithReason
     public string[] InputPorts  { get; init; } = Array.Empty<string>();
     public string[] OutputPorts { get; init; } = Array.Empty<string>();
     public float    Score       { get; init; }
+    public string   NodeType    { get; init; } = string.Empty;
 
     /// <summary>
     /// One-sentence explanation of why Gemini selected this node for the query.
