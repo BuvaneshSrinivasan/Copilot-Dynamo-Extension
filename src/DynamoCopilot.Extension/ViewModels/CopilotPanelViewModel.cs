@@ -588,6 +588,8 @@ namespace DynamoCopilot.Extension.ViewModels
                 else
                 {
                     message = $"The Python Script node returned this error:\n\n{error}\n\n" +
+                              $"IMPORTANT: The code has been modified since your last response. " +
+                              $"Ignore any code from earlier in this conversation — use only the code below.\n\n" +
                               $"Here is the current code:\n```python\n{code}\n```\n\n" +
                               $"Please fix the error and return the complete fixed code in a single ```python ... ``` block.";
                 }

@@ -58,6 +58,7 @@ TemporaryDependencyNodeTargetIdentifier=net48
 /warnaserror+:NU1605
 
 [sourceFiles]
+Commands/AsyncRelayCommand.cs
 Converters/InverseBoolToVisibilityConverter.cs
 DynamoCopilotViewExtension.cs
 obj/Debug/net48/
@@ -65,6 +66,9 @@ obj/Debug/net48/
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
  Views/CopilotPanelView.g.cs
+Services/
+ DynamoPackageDownloader.cs
+ PackageStateService.cs
 ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
@@ -83,7 +87,9 @@ Views/CopilotPanelView.xaml.cs
  System.Data.dll
  System.dll
  System.Drawing.dll
+ System.IO.Compression.dll
  System.IO.Compression.FileSystem.dll
+ System.Net.Http.dll
  System.Numerics.dll
  System.Runtime.Serialization.dll
  System.Windows.Controls.Ribbon.dll
@@ -196,6 +202,7 @@ TemporaryDependencyNodeTargetIdentifier=net8.0-windows
 /warnaserror+:NU1605,SYSLIB0011
 
 [sourceFiles]
+Commands/AsyncRelayCommand.cs
 Converters/InverseBoolToVisibilityConverter.cs
 DynamoCopilotViewExtension.cs
 obj/Debug/net8.0-windows/
@@ -203,6 +210,9 @@ obj/Debug/net8.0-windows/
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
  Views/CopilotPanelView.g.cs
+Services/
+ DynamoPackageDownloader.cs
+ PackageStateService.cs
 ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
