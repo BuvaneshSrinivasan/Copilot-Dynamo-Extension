@@ -1,3 +1,4 @@
+// DO NOT DELETE, SAVED FOR FUTURE USE — server-side OpenAI streaming for the subscription model.
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;

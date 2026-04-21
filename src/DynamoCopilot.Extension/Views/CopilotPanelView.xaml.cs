@@ -43,10 +43,19 @@ namespace DynamoCopilot.Extension.Views
             RegisterConfirmPasswordBox.Clear();
         }
 
-        // ── User info ─────────────────────────────────────────────────────────
+        // ── Settings (combined panel: account info + AI config) ──────────────────
 
-        private void OnUserIconClick(object sender, RoutedEventArgs e)
-            => _viewModel.ToggleUserInfo();
+        private void OnSettingsClick(object sender, RoutedEventArgs e)
+            => _viewModel.ToggleSettings();
+
+        private void OnToggleAiConfigClick(object sender, RoutedEventArgs e)
+            => _viewModel.SettingsVm.ToggleAiConfig();
+
+        private void OnApiKeyChanged(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.PasswordBox pb)
+                _viewModel.SettingsVm.ApiKey = pb.Password;
+        }
 
         private void OnSignOutClick(object sender, RoutedEventArgs e)
         {

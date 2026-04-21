@@ -83,17 +83,19 @@ namespace DynamoCopilot.Extension
             var settings = DynamoCopilotSettings.Load();
 
             _authService = new AuthService(settings.EffectiveServerUrl);
-            var llmService         = new ServerLlmService(settings.EffectiveServerUrl, _authService);
-            var nodeSuggestService = new NodeSuggestService(settings.EffectiveServerUrl, _authService);
-            var historyService     = new ChatHistoryService();
 
+            // ONNX embedding service for local node vector search (optional — degrades to BM25 if model not present)
+            var onnxEmbedder = new OnnxEmbeddingService();
+            var localSearch  = new LocalNodeSearchService(onnxEmbedder.IsReady ? onnxEmbedder : null);
+
+            var historyService  = new ChatHistoryService();
             var currentPkgDir   = ResolveCurrentPackagesDir(loadedParams);
             var packageState    = new PackageStateService(currentPkgDir);
             var dynamoViewModel = loadedParams.DynamoWindow?.DataContext;
             var downloader      = new DynamoPackageDownloader(dynamoViewModel);
 
             _viewModel = new CopilotPanelViewModel(
-                settings, _authService, llmService, nodeSuggestService,
+                settings, _authService, localSearch,
                 historyService, loadedParams, packageState, downloader);
 
             _view = new CopilotPanelView(_viewModel);

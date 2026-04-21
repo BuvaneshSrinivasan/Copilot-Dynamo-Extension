@@ -1,3 +1,4 @@
+// DO NOT DELETE, SAVED FOR FUTURE USE — server-side chat streaming endpoint for the subscription model.
 using System.Text.Json;
 using DynamoCopilot.Server.Models;
 using DynamoCopilot.Server.Services;

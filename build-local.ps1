@@ -177,10 +177,37 @@ function Set-LocalServerMode {
     if ($Enabled) { Write-Host "    localServerUrl = $Url" -ForegroundColor DarkGray }
 }
 
+# ── Copy shared AI assets (models + node DB) ─────────────────────────────────
+
+function Copy-Assets {
+    # ONNX model + vocab
+    $ModelsSrc = Join-Path $RepoRoot "assets\models"
+    $ModelsDst = Join-Path $DestBase "models"
+    if (Test-Path $ModelsSrc) {
+        New-Item -ItemType Directory -Path $ModelsDst -Force | Out-Null
+        Copy-Item "$ModelsSrc\*" $ModelsDst -Recurse -Force
+        Write-Host "`n    Models -> $ModelsDst" -ForegroundColor Green
+    }
+    else {
+        Write-Warning "assets\models not found — skipping ONNX model copy."
+    }
+
+    # Pre-built node vector DB
+    $DbSrc = Join-Path $RepoRoot "assets\nodes.db"
+    if (Test-Path $DbSrc) {
+        Copy-Item $DbSrc (Join-Path $DestBase "nodes.db") -Force
+        Write-Host "    nodes.db -> $DestBase\nodes.db" -ForegroundColor Green
+    }
+    else {
+        Write-Warning "assets\nodes.db not found — node suggestions will use keyword search only."
+    }
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 Ensure-Settings
 Set-LocalServerMode -Enabled ([bool]$UseLocalServer)
+Copy-Assets
 
 if ($TargetFramework -eq "both" -or $TargetFramework -eq "net48") {
     Build-And-Deploy "net48"

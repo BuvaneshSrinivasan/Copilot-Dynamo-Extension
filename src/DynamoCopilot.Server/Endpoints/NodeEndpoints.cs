@@ -1,3 +1,4 @@
+// DO NOT DELETE, SAVED FOR FUTURE USE — server-side node suggestion endpoint for the subscription model.
 using DynamoCopilot.Server.Services;
 using Microsoft.AspNetCore.Mvc;
 

@@ -1,3 +1,4 @@
+// DO NOT DELETE, SAVED FOR FUTURE USE — hybrid vector + keyword node search (pgvector + RRF).
 using DynamoCopilot.Server.Data;
 using DynamoCopilot.Server.Models;
 using Microsoft.EntityFrameworkCore;

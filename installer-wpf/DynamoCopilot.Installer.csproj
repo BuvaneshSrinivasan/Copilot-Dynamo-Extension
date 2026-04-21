@@ -14,4 +14,21 @@
     <!-- Change Company here to update the publisher shown in the installer UI -->
     <Company>BimEra</Company>
   </PropertyGroup>
+
+  <!-- Bundle ONNX model + vocab from assets/models into the installer output under models/ -->
+  <ItemGroup>
+    <Content Include="..\assets\models\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>models\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <!-- Bundle pre-built node vector DB -->
+  <ItemGroup>
+    <Content Include="..\assets\nodes.db" Condition="Exists('..\assets\nodes.db')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>nodes.db</Link>
+    </Content>
+  </ItemGroup>
+
 </Project>

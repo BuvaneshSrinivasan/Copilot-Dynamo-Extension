@@ -1,3 +1,4 @@
+// DO NOT DELETE, SAVED FOR FUTURE USE — Ollama embedding service for server-side vector search.
 using System.Text;
 using System.Text.Json;
 using Pgvector;

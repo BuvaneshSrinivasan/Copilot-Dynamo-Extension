@@ -3,31 +3,27 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DynamoCopilot.Core.Models;
 
 namespace DynamoCopilot.Core.Settings
 {
     /// <summary>
     /// Application-level settings persisted to %AppData%\DynamoCopilot\settings.json.
-    ///
-    /// ServerUrl is intentionally not surfaced in the UI — it is a deployment
-    /// concern, not a user preference. Edit settings.json directly to point
-    /// the extension at a different server without rebuilding.
     /// </summary>
     public sealed class DynamoCopilotSettings
     {
-        private static readonly string SettingsFilePath = Path.Combine(
+        public static readonly string AppDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "DynamoCopilot",
-            "settings.json");
+            "DynamoCopilot");
 
-        /// <summary>DynamoCopilot backend URL. Not shown to users.</summary>
+        private static readonly string SettingsFilePath =
+            Path.Combine(AppDataDir, "settings.json");
+
+        // ── Auth server (licensing only) ──────────────────────────────────────
+
         [JsonPropertyName("serverUrl")]
         public string ServerUrl { get; set; } =
             "https://radiant-determination-production.up.railway.app";
-
-        /// <summary>How many past messages to include with each chat request.</summary>
-        [JsonPropertyName("maxHistoryMessages")]
-        public int MaxHistoryMessages { get; set; } = 40;
 
         [JsonPropertyName("useLocalServer")]
         public bool UseLocalServer { get; set; } = false;
@@ -40,12 +36,49 @@ namespace DynamoCopilot.Core.Settings
             ? LocalServerUrl.TrimEnd('/')
             : ServerUrl.TrimEnd('/');
 
+        // ── AI provider (BYOK) ────────────────────────────────────────────────
+
+        [JsonPropertyName("aiProvider")]
+        public AiProvider AiProvider { get; set; } = AiProvider.OpenAI;
+
+        /// <summary>API key for the selected provider. Never logged or transmitted to our server.</summary>
+        [JsonPropertyName("apiKey")]
+        public string ApiKey { get; set; } = string.Empty;
+
+        /// <summary>Model name exactly as the provider expects it (e.g. "gpt-4o", "gemini-2.5-flash").</summary>
+        [JsonPropertyName("modelName")]
+        public string ModelName { get; set; } = string.Empty;
+
+        // ── Ollama-specific ───────────────────────────────────────────────────
+
+        /// <summary>Base URL for a local or remote Ollama instance.</summary>
+        [JsonPropertyName("ollamaUrl")]
+        public string OllamaUrl { get; set; } = "http://localhost:11434";
+
+        // ── Chat behaviour ────────────────────────────────────────────────────
+
+        [JsonPropertyName("maxHistoryMessages")]
+        public int MaxHistoryMessages { get; set; } = 40;
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+
+        /// <summary>Default model name shown as placeholder for each provider.</summary>
+        public static string DefaultModelFor(AiProvider provider) => provider switch
+        {
+            AiProvider.OpenAI   => "gpt-4o",
+            AiProvider.Gemini   => "gemini-2.5-flash",
+            AiProvider.Claude   => "claude-sonnet-4-6",
+            AiProvider.DeepSeek => "deepseek-chat",
+            AiProvider.Ollama   => "llama3.2",
+            _                   => string.Empty
+        };
+
         public static DynamoCopilotSettings Load()
         {
             if (!File.Exists(SettingsFilePath))
             {
                 var defaults = new DynamoCopilotSettings();
-                defaults.Save();   // write defaults on first run so the file is visible
+                defaults.Save();
                 return defaults;
             }
 
@@ -63,7 +96,7 @@ namespace DynamoCopilot.Core.Settings
 
         public void Save()
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsFilePath)!);
+            Directory.CreateDirectory(AppDataDir);
             var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(SettingsFilePath, json, Encoding.UTF8);
         }

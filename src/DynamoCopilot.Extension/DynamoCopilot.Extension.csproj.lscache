@@ -2,12 +2,10 @@ version=1
 
 # This file caches language service data to improve the performance of C# Dev Kit.
 # It is not intended for manual editing. It can safely be deleted and will be
-# regenerated automatically.
+# regenerated automatically. For more information, see https://aka.ms/lscache
 #
-# To exclude from version control, add *.lscache to your .gitignore file.
-#
-# To disable caching, add the following to your VS Code settings:
-#   "dotnet.projectsystem.enableLanguageServiceCache": false
+# To control where cache files are stored, use the following VS Code setting:
+#   "dotnet.projectsystem.cacheInProjectFolder": true
 
 [project]
 language=C#
@@ -68,10 +66,12 @@ obj/Debug/net48/
  Views/CopilotPanelView.g.cs
 Services/
  DynamoPackageDownloader.cs
+ OnnxEmbeddingService.cs
  PackageStateService.cs
 ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
+ SettingsPanelViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]
@@ -129,6 +129,8 @@ Views/CopilotPanelView.xaml.cs
   DynamoUnits.dll
   ProtoGeometry.dll
  microsoft.bcl.asyncinterfaces/8.0.0/lib/net462/Microsoft.Bcl.AsyncInterfaces.dll
+ microsoft.data.sqlite.core/8.0.13/lib/netstandard2.0/Microsoft.Data.Sqlite.dll
+ microsoft.ml.onnxruntime.managed/1.20.1/lib/netstandard2.0/Microsoft.ML.OnnxRuntime.dll
  newtonsoft.json/13.0.1/lib/net45/Newtonsoft.Json.dll
  nunit/2.6.3/lib/nunit.framework.dll
  prism/4.1.0/lib/NET40/
@@ -136,6 +138,9 @@ Views/CopilotPanelView.xaml.cs
   Microsoft.Practices.Prism.dll
   Microsoft.Practices.Prism.Interactivity.dll
   System.Windows.Interactivity.dll
+ sqlitepclraw.bundle_e_sqlite3/2.1.6/lib/net461/SQLitePCLRaw.batteries_v2.dll
+ sqlitepclraw.core/2.1.6/lib/netstandard2.0/SQLitePCLRaw.core.dll
+ sqlitepclraw.provider.dynamic_cdecl/2.1.6/lib/netstandard2.0/SQLitePCLRaw.provider.dynamic_cdecl.dll
  system.buffers/4.5.1/ref/net45/System.Buffers.dll
  system.collections.immutable/1.7.1/lib/net461/System.Collections.Immutable.dll
  system.memory/4.5.5/lib/net461/System.Memory.dll
@@ -212,10 +217,12 @@ obj/Debug/net8.0-windows/
  Views/CopilotPanelView.g.cs
 Services/
  DynamoPackageDownloader.cs
+ OnnxEmbeddingService.cs
  PackageStateService.cs
 ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
+ SettingsPanelViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]
@@ -448,8 +455,13 @@ Views/CopilotPanelView.xaml.cs
  dynamovisualprogramming.zerotouchlibrary/2.19.4.6625/lib/net48/
   DynamoUnits.dll
   ProtoGeometry.dll
+ microsoft.data.sqlite.core/8.0.13/lib/net8.0/Microsoft.Data.Sqlite.dll
+ microsoft.ml.onnxruntime.managed/1.20.1/lib/net8.0/Microsoft.ML.OnnxRuntime.dll
  newtonsoft.json/13.0.1/lib/netstandard2.0/Newtonsoft.Json.dll
  nunit/3.13.3/lib/netstandard2.0/nunit.framework.dll
+ sqlitepclraw.bundle_e_sqlite3/2.1.6/lib/netstandard2.0/SQLitePCLRaw.batteries_v2.dll
+ sqlitepclraw.core/2.1.6/lib/netstandard2.0/SQLitePCLRaw.core.dll
+ sqlitepclraw.provider.e_sqlite3/2.1.6/lib/net6.0-windows7.0/SQLitePCLRaw.provider.e_sqlite3.dll
 
 [analyzerReferences]
 <DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.25/analyzers/dotnet/cs/

@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Dynamo.Wpf.Extensions;
 using DynamoCopilot.Core.Models;
 using DynamoCopilot.Core.Services;
+using DynamoCopilot.Core.Services.Providers;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.Extension.Services;
 using DynamoCopilot.GraphInterop;
@@ -68,8 +69,8 @@ namespace DynamoCopilot.Extension.ViewModels
     {
         private readonly DynamoCopilotSettings   _settings;
         private readonly AuthService             _authService;
-        private readonly ServerLlmService        _llmService;
-        private readonly NodeSuggestService      _nodeSuggestService;
+        private          ILlmService             _llmService;
+        private readonly LocalNodeSearchService  _localSearchService;
         private readonly ChatHistoryService      _historyService;
         private readonly ViewLoadedParams        _dynParams;
         private readonly PackageStateService     _packageState;
@@ -77,6 +78,25 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private ChatSession _currentSession;
         private CancellationTokenSource? _streamingCts;
+
+        // ── Settings panel ────────────────────────────────────────────────────────
+
+        private bool _showSettings;
+
+        public SettingsPanelViewModel SettingsVm { get; }
+
+        public bool ShowSettings
+        {
+            get => _showSettings;
+            private set { _showSettings = value; OnPropertyChanged(); }
+        }
+
+        public void ToggleSettings()
+        {
+            ShowSettings = !ShowSettings;
+            if (ShowSettings)
+                _ = RefreshUserInfoAsync();
+        }
 
         // ── Auth state ────────────────────────────────────────────────────────────
 
@@ -89,14 +109,15 @@ namespace DynamoCopilot.Extension.ViewModels
         private string _loginEmail    = string.Empty;
         private string _registerEmail = string.Empty;
 
-        // ── User info panel ───────────────────────────────────────────────────────
+        // ── User info ─────────────────────────────────────────────────────────────
 
         private bool   _showUserInfo;
-        private string _userEmail    = string.Empty;
+        private string _userEmail       = string.Empty;
+        private bool   _isLicenceActive = true;
         private int    _requestsUsed;
-        private int    _requestLimit  = 30;
+        private int    _requestLimit    = 30;
         private int    _tokensUsed;
-        private int    _tokenLimit    = 40000;
+        private int    _tokenLimit      = 40000;
 
         // ── Panel mode ────────────────────────────────────────────────────────────
 
@@ -201,6 +222,12 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _userEmail = value; OnPropertyChanged(); }
         }
 
+        public bool IsLicenceActive
+        {
+            get => _isLicenceActive;
+            private set { _isLicenceActive = value; OnPropertyChanged(); }
+        }
+
         public int RequestsUsed
         {
             get => _requestsUsed;
@@ -286,8 +313,7 @@ namespace DynamoCopilot.Extension.ViewModels
         public CopilotPanelViewModel(
             DynamoCopilotSettings    settings,
             AuthService              authService,
-            ServerLlmService         llmService,
-            NodeSuggestService       nodeSuggestService,
+            LocalNodeSearchService   localSearchService,
             ChatHistoryService       historyService,
             ViewLoadedParams         dynParams,
             PackageStateService      packageState,
@@ -295,15 +321,26 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             _settings           = settings;
             _authService        = authService;
-            _llmService         = llmService;
-            _nodeSuggestService = nodeSuggestService;
+            _localSearchService = localSearchService;
             _historyService     = historyService;
             _dynParams          = dynParams;
             _packageState       = packageState;
             _downloader         = downloader;
 
+            _llmService = LlmServiceFactory.Create(settings);
+
+            SettingsVm = new SettingsPanelViewModel(settings);
+            SettingsVm.SettingsSaved += OnSettingsSaved;
+
             _currentSession = _historyService.Load(GetCurrentGraphPath());
             _dynParams.CurrentWorkspaceChanged += OnWorkspaceChanged;
+        }
+
+        private void OnSettingsSaved(object? sender, EventArgs e)
+        {
+            // Rebuild the LLM service whenever the user saves new provider settings
+            (_llmService as IDisposable)?.Dispose();
+            _llmService = LlmServiceFactory.Create(_settings);
         }
 
         // ── Startup auth check ────────────────────────────────────────────────────
@@ -419,15 +456,9 @@ namespace DynamoCopilot.Extension.ViewModels
             _streamingCts?.Cancel();
         }
 
-        // ── User info panel ───────────────────────────────────────────────────────
+        // ── User info (integrated into settings panel) ────────────────────────────
 
-        public async void ToggleUserInfo()
-        {
-            ShowUserInfo = !ShowUserInfo;
-
-            if (ShowUserInfo)
-                await RefreshUserInfoAsync();
-        }
+        public void ToggleUserInfo() => ToggleSettings();
 
         private async Task RefreshUserInfoAsync()
         {
@@ -647,8 +678,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
             try
             {
-                var graphContext = GetGraphNodeNames();
-                var results      = await _nodeSuggestService.SuggestAsync(query, graphContext);
+                var results = await _localSearchService.SearchAsync(query);
 
                 foreach (var node in results)
                     NodeSuggestions.Add(new NodeSuggestionCardViewModel(
@@ -660,13 +690,6 @@ namespace DynamoCopilot.Extension.ViewModels
                 StatusMessage = results.Count == 0
                     ? "No matching nodes found."
                     : $"Found {results.Count} node{(results.Count == 1 ? "" : "s")}.";
-            }
-            catch (InvalidOperationException ex) when (
-                ex.Message.Contains("Session expired") ||
-                ex.Message.Contains("log in"))
-            {
-                Logout();
-                return;
             }
             catch (Exception ex)
             {

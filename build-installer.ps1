@@ -111,7 +111,9 @@ $SizeMb = [math]::Round((Get-Item $ExePath).Length / 1MB, 1)
 
 Write-Host ""
 Write-Host "==> Done! Installer ready ($SizeMb MB)" -ForegroundColor Green
-Write-Host "    Exe:  $ExePath"                     -ForegroundColor Green
-Write-Host "    Dist: $OutputDist"                  -ForegroundColor Green
+Write-Host "    Exe:    $ExePath"                   -ForegroundColor Green
+Write-Host "    Dist:   $OutputDist"                -ForegroundColor Green
+Write-Host "    Models: $(Join-Path $OutputDir 'models')"  -ForegroundColor Green
+Write-Host "    DB:     $(Join-Path $OutputDir 'nodes.db')" -ForegroundColor Green
 Write-Host ""
-Write-Host "    Distribute the entire Output\ folder (exe + dist\)." -ForegroundColor DarkGray
+Write-Host "    Distribute the entire Output\ folder (exe + dist\ + models\ + nodes.db)." -ForegroundColor DarkGray

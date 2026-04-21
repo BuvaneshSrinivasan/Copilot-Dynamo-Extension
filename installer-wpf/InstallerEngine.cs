@@ -35,17 +35,23 @@ public class InstallerEngine
         progress.Report(new("Copying files (net4.8)…", 10));
         await Task.Run(() => CopyTfm(distDir, destBase, "net48"), ct);
 
-        progress.Report(new("Copying files (net8.0)…", 35));
+        progress.Report(new("Copying files (net8.0)…", 30));
         await Task.Run(() => CopyTfm(distDir, destBase, "net8.0-windows"), ct);
 
-        progress.Report(new("Writing settings…", 60));
+        progress.Report(new("Copying AI models…", 50));
+        await Task.Run(() => CopyModels(destBase), ct);
+
+        progress.Report(new("Copying node database…", 60));
+        await Task.Run(() => CopyNodeDb(destBase), ct);
+
+        progress.Report(new("Writing settings…", 70));
         await Task.Run(() => WriteSettings(destBase), ct);
 
-        progress.Report(new("Registering with Dynamo…", 78));
+        progress.Report(new("Registering with Dynamo…", 80));
         await Task.Run(() => RegisterDynamo(destBase), ct);
 
         progress.Report(new("Finishing…", 95));
-        await Task.Delay(400, ct);   // let the bar reach 95% visibly
+        await Task.Delay(400, ct);
 
         progress.Report(new("Done", 100));
     }
@@ -99,6 +105,32 @@ public class InstallerEngine
 
         File.WriteAllText(path, JsonSerializer.Serialize(settings,
             new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static void CopyNodeDb(string destBase)
+    {
+        var src = Path.Combine(AppContext.BaseDirectory, "nodes.db");
+        if (!File.Exists(src)) return;
+
+        Directory.CreateDirectory(destBase);
+        File.Copy(src, Path.Combine(destBase, "nodes.db"), overwrite: true);
+    }
+
+    private static void CopyModels(string destBase)
+    {
+        var src = Path.Combine(AppContext.BaseDirectory, "models");
+        if (!Directory.Exists(src)) return;
+
+        var dst = Path.Combine(destBase, "models");
+        Directory.CreateDirectory(dst);
+
+        foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+        {
+            var rel    = Path.GetRelativePath(src, file);
+            var target = Path.Combine(dst, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target, overwrite: true);
+        }
     }
 
     private static void RegisterDynamo(string destBase)
