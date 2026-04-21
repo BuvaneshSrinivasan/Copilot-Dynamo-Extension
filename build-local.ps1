@@ -34,7 +34,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RepoRoot    = $PSScriptRoot
+$RepoRoot    = if ($PSScriptRoot) { $PSScriptRoot } else { $PSCommandPath | Split-Path -Parent }
+if (-not $RepoRoot) { $RepoRoot = (Get-Location).Path }
 $ExtProj     = Join-Path $RepoRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
 $AppData     = [Environment]::GetFolderPath("ApplicationData")
 $DestBase    = Join-Path $AppData "DynamoCopilot"
@@ -187,19 +188,25 @@ function Copy-Assets {
         New-Item -ItemType Directory -Path $ModelsDst -Force | Out-Null
         Copy-Item "$ModelsSrc\*" $ModelsDst -Recurse -Force
         Write-Host "`n    Models -> $ModelsDst" -ForegroundColor Green
+        "AFTER models copy" | Out-File "$env:TEMP\build-local-debug.txt" -Append
     }
     else {
         Write-Warning "assets\models not found — skipping ONNX model copy."
+        "models not found" | Out-File "$env:TEMP\build-local-debug.txt" -Append
     }
 
+    try { "AFTER if/else block" | Out-File "$env:TEMP\build-local-debug.txt" -Append } catch { "ERROR at AFTER if/else: $_" | Out-File "$env:TEMP\build-local-debug.txt" -Append }
     # Pre-built node vector DB
     $DbSrc = Join-Path $RepoRoot "assets\nodes.db"
+    "nodes.db check: $DbSrc exists=$(Test-Path $DbSrc)" | Out-File "$env:TEMP\build-local-debug.txt" -Append
+    Write-Host "`n    Looking for nodes.db at: $DbSrc" -ForegroundColor DarkGray
     if (Test-Path $DbSrc) {
-        Copy-Item $DbSrc (Join-Path $DestBase "nodes.db") -Force
+        [System.IO.File]::Copy($DbSrc, (Join-Path $DestBase "nodes.db"), $true)
         Write-Host "    nodes.db -> $DestBase\nodes.db" -ForegroundColor Green
     }
     else {
-        Write-Warning "assets\nodes.db not found — node suggestions will use keyword search only."
+        Write-Warning "assets\nodes.db not found at '$DbSrc' — node suggestions will use keyword search only."
+        Write-Warning "Run the NodeIndexer (Mode 2) first to generate assets\nodes.db."
     }
 }
 
