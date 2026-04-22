@@ -2,6 +2,7 @@
 bin/
 obj/
 installer-wpf/payload.zip
+installer-wpf/Output/
 *.user
 *.suo
 .vs/
