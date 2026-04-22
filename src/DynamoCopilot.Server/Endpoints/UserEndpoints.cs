@@ -21,7 +21,6 @@ public static class UserEndpoints
     private static async Task<IResult> GetMeAsync(
         HttpContext httpContext,
         AppDbContext db,
-        IConfiguration config,
         CancellationToken ct)
     {
         // The JWT middleware has already validated the token and populated HttpContext.User.
@@ -34,16 +33,10 @@ public static class UserEndpoints
         if (user is null)
             return Results.NotFound(new { error = "User not found." });
 
-        var defaultRequestLimit = int.Parse(config["RateLimit:DailyRequestLimit"] ?? "30");
-        var defaultTokenLimit   = int.Parse(config["RateLimit:DailyTokenLimit"]   ?? "40000");
-
         return Results.Ok(new
         {
             user.Email,
-            user.DailyRequestCount,
             user.DailyTokenCount,
-            EffectiveRequestLimit = user.RequestLimit ?? defaultRequestLimit,
-            EffectiveTokenLimit   = user.TokenLimit   ?? defaultTokenLimit,
             user.IsActive
         });
     }

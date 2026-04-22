@@ -113,13 +113,13 @@ namespace DynamoCopilot.Core.Services.Providers
                     var root = doc.RootElement;
 
                     if (root.TryGetProperty("candidates", out var candidates) &&
-                        candidates.GetArrayLength() > 0)
+                        candidates.GetArrayLength() > 0 &&
+                        candidates[0].TryGetProperty("content", out var content) &&
+                        content.TryGetProperty("parts", out var parts) &&
+                        parts.GetArrayLength() > 0 &&
+                        parts[0].TryGetProperty("text", out var textEl))
                     {
-                        var content = candidates[0].GetProperty("content");
-                        var parts   = content.GetProperty("parts");
-                        if (parts.GetArrayLength() > 0 &&
-                            parts[0].TryGetProperty("text", out var textEl))
-                            chunk = textEl.GetString();
+                        chunk = textEl.GetString();
                     }
                 }
                 catch (JsonException) { }

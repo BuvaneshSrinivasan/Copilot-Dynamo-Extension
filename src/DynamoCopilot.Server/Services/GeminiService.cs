@@ -202,7 +202,7 @@ public class GeminiService : ILlmService
         Guidelines:
         - Output code only — no explanation text, no prose
         - If fixing existing code, state the bug in one sentence before the code
-        - Format all code in ```python blocks
+        - ALWAYS wrap every code snippet in ```python ... ``` fences — NEVER output raw code outside a code block
         - Only import what the script actually uses (clr, RevitAPI, etc.)
         - Default to IronPython 2 syntax unless the user specifies CPython 3
         - Do not add inline comments or explanatory comments inside generated code

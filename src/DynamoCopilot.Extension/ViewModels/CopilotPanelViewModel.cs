@@ -101,20 +101,34 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── Settings panel ────────────────────────────────────────────────────────
 
-        private bool _showSettings;
+        private bool _showAiPanel;
+        private bool _showUserPanel;
 
         public SettingsPanelViewModel SettingsVm { get; }
 
-        public bool ShowSettings
+        public bool ShowAiPanel
         {
-            get => _showSettings;
-            private set { _showSettings = value; OnPropertyChanged(); }
+            get => _showAiPanel;
+            private set { _showAiPanel = value; OnPropertyChanged(); }
         }
 
-        public void ToggleSettings()
+        public bool ShowUserPanel
         {
-            ShowSettings = !ShowSettings;
-            if (ShowSettings)
+            get => _showUserPanel;
+            private set { _showUserPanel = value; OnPropertyChanged(); }
+        }
+
+        public void ToggleAiPanel()
+        {
+            ShowAiPanel   = !ShowAiPanel;
+            ShowUserPanel = false;
+        }
+
+        public void ToggleUserPanel()
+        {
+            ShowUserPanel = !ShowUserPanel;
+            ShowAiPanel   = false;
+            if (ShowUserPanel)
                 _ = RefreshUserInfoAsync();
         }
 
@@ -131,13 +145,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── User info ─────────────────────────────────────────────────────────────
 
-        private bool   _showUserInfo;
         private string _userEmail       = string.Empty;
         private bool   _isLicenceActive = true;
-        private int    _requestsUsed;
-        private int    _requestLimit    = 30;
         private int    _tokensUsed;
-        private int    _tokenLimit      = 40000;
 
         // ── Panel mode ────────────────────────────────────────────────────────────
 
@@ -230,12 +240,6 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── User info bindings ────────────────────────────────────────────────────
 
-        public bool ShowUserInfo
-        {
-            get => _showUserInfo;
-            private set { _showUserInfo = value; OnPropertyChanged(); }
-        }
-
         public string UserEmail
         {
             get => _userEmail;
@@ -248,33 +252,13 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _isLicenceActive = value; OnPropertyChanged(); }
         }
 
-        public int RequestsUsed
-        {
-            get => _requestsUsed;
-            private set { _requestsUsed = value; OnPropertyChanged(); OnPropertyChanged(nameof(RequestsDisplay)); }
-        }
-
-        public int RequestLimit
-        {
-            get => _requestLimit;
-            private set { _requestLimit = value; OnPropertyChanged(); OnPropertyChanged(nameof(RequestsDisplay)); }
-        }
-
-        public string RequestsDisplay => $"{_requestsUsed} / {_requestLimit}";
-
         public int TokensUsed
         {
             get => _tokensUsed;
             private set { _tokensUsed = value; OnPropertyChanged(); OnPropertyChanged(nameof(TokensDisplay)); }
         }
 
-        public int TokenLimit
-        {
-            get => _tokenLimit;
-            private set { _tokenLimit = value; OnPropertyChanged(); OnPropertyChanged(nameof(TokensDisplay)); }
-        }
-
-        public string TokensDisplay => $"{_tokensUsed:N0} / {_tokenLimit:N0}";
+        public string TokensDisplay => $"{_tokensUsed:N0}";
 
         // ── Chat bindings ─────────────────────────────────────────────────────────
 
@@ -468,7 +452,8 @@ namespace DynamoCopilot.Extension.ViewModels
             NodeSuggestions.Clear();
             ShowWelcome      = true;
             StatusMessage    = string.Empty;
-            ShowUserInfo     = false;
+            ShowAiPanel      = false;
+            ShowUserPanel    = false;
             IsLoggedIn       = false;
             IsRegisterMode   = false;
             AuthError        = string.Empty;
@@ -482,7 +467,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── User info (integrated into settings panel) ────────────────────────────
 
-        public void ToggleUserInfo() => ToggleSettings();
+        public void ToggleUserInfo() => ToggleUserPanel();
 
         private async Task RefreshUserInfoAsync()
         {
@@ -492,10 +477,8 @@ namespace DynamoCopilot.Extension.ViewModels
             if (info == null) return;
 
             UserEmail    = info.Email;
-            RequestsUsed = info.DailyRequestCount;
-            RequestLimit = info.EffectiveRequestLimit;
             TokensUsed   = info.DailyTokenCount;
-            TokenLimit   = info.EffectiveTokenLimit;
+            IsLicenceActive = info.IsActive;
         }
 
         // ── Chat actions ──────────────────────────────────────────────────────────
@@ -503,6 +486,7 @@ namespace DynamoCopilot.Extension.ViewModels
         public async Task SendMessageAsync(string userText)
         {
             if (string.IsNullOrWhiteSpace(userText) || IsStreaming) return;
+            CopilotLogger.Log("SendMessageAsync", $"user={_authService.Email}  text={Truncate(userText, 120)}");
             try
             {
                 await SendMessageCoreAsync(userText);
@@ -511,8 +495,21 @@ namespace DynamoCopilot.Extension.ViewModels
             {
                 CopilotLogger.Log("SendMessageAsync unhandled", ex);
                 IsStreaming    = false;
-                StatusMessage  = "An unexpected error occurred. See %TEMP%\\DynamoCopilot.log for details.";
+                StatusMessage  = "An unexpected error occurred. See AppData\\DynamoCopilot\\log for details.";
             }
+        }
+
+        /// <summary>
+        /// Called by the DispatcherUnhandledException handler when a WPF rendering
+        /// exception originating from our code is caught. Resets streaming state so
+        /// the user can retry.
+        /// </summary>
+        public void HandleRenderException(Exception ex)
+        {
+            IsStreaming = false;
+            _isClassifying = false;
+            StatusMessage  = "A rendering error occurred. See AppData\\DynamoCopilot\\log for details.";
+            CopilotLogger.Log("HandleRenderException", ex.Message);
         }
 
         private async Task SendMessageCoreAsync(string userText)
@@ -529,6 +526,9 @@ namespace DynamoCopilot.Extension.ViewModels
             _streamingCts = new CancellationTokenSource();
             var ct = _streamingCts.Token;
 
+            // Block further sends for the entire request lifecycle (classification + response)
+            IsStreaming = true;
+
             var engineName = DetectPythonEngine();
             _currentSession.PythonEngine = engineName;
 
@@ -538,30 +538,38 @@ namespace DynamoCopilot.Extension.ViewModels
             // Feature 1: spec-first classification (unless bypassed or disabled)
             if (!bypassSpec && _settings.EnableSpecFirst)
             {
+                CopilotLogger.Log("Classify", "starting");
                 _isClassifying = true;
                 StatusMessage  = "Analyzing your request...";
                 SpecClassificationResult classification;
                 try
                 {
                     var historyForClassifier = GetRecentHistoryForClassifier();
+                    CopilotLogger.Log("Classify", $"historyMessages={historyForClassifier.Count}");
                     classification = await _specGenerator.ClassifyAsync(userText, historyForClassifier, ct);
                 }
                 catch (OperationCanceledException)
                 {
+                    CopilotLogger.Log("Classify", "cancelled");
                     _isClassifying = false;
                     StatusMessage  = string.Empty;
                     IsStreaming    = false;
                     return;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    CopilotLogger.Log("Classify failed — falling back to direct chat", ex);
                     classification = new SpecClassificationResult { IsSpec = false };
                 }
                 _isClassifying = false;
                 StatusMessage  = string.Empty;
 
+                CopilotLogger.Log("Classify", $"isSpec={classification.IsSpec}  hasChatText={!string.IsNullOrEmpty(classification.ChatText)}");
+
                 if (classification.IsSpec && classification.Spec != null)
                 {
+                    CopilotLogger.Log("Classify", $"spec steps={classification.Spec.Steps.Count}  questions={classification.Spec.Questions.Count}");
+                    IsStreaming = false;
                     ShowSpecCard(classification.Spec);
                     return;
                 }
@@ -569,6 +577,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 // Chat response from classifier — show it directly without another LLM call
                 if (!string.IsNullOrWhiteSpace(classification.ChatText))
                 {
+                    CopilotLogger.Log("Classify", "returning classifier chat response");
                     var chatVm = new ChatMessageViewModel
                     {
                         Role    = ChatRole.Assistant,
@@ -580,33 +589,43 @@ namespace DynamoCopilot.Extension.ViewModels
                         Role    = ChatRole.Assistant,
                         Content = classification.ChatText
                     });
-                    _historyService.Save(_currentSession);
+                    try { _historyService.Save(_currentSession); } catch { }
+                    IsStreaming = false;
                     return;
                 }
             }
 
+            CopilotLogger.Log("Classify", "bypassed or disabled — going to streaming");
             await RunStreamingAsync(userText, engineName, ct);
         }
 
         private void ShowSpecCard(CodeSpecification spec)
         {
+            CopilotLogger.Log("ShowSpecCard", "SetPending");
             _specState.SetPending(spec);
+
+            CopilotLogger.Log("ShowSpecCard", "creating SpecCardViewModel");
             var cardVm = new SpecCardViewModel(
                 spec,
                 onConfirm: s => ConfirmSpecAsync(s),
                 onCancel:  CancelPendingSpec);
 
+            CopilotLogger.Log("ShowSpecCard", "creating ChatMessageViewModel");
             var msgVm = new ChatMessageViewModel
             {
                 Role        = ChatRole.Assistant,
                 MessageType = ChatMessageType.SpecCard,
                 SpecCard    = cardVm
             };
+
+            CopilotLogger.Log("ShowSpecCard", "AddMessage");
             AddMessage(msgVm);
+            CopilotLogger.Log("ShowSpecCard", "done");
         }
 
         private async Task ConfirmSpecAsync(CodeSpecification spec)
         {
+            CopilotLogger.Log("ConfirmSpec", $"steps={spec.Steps.Count}  questions={spec.Questions.Count}");
             _specState.Clear();
 
             // Build a code-generation request from the confirmed spec
@@ -666,6 +685,8 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private async Task RunStreamingAsync(string userText, string engineName, CancellationToken ct)
         {
+            CopilotLogger.Log("Streaming", $"engine={engineName}  provider={_settings.AiProvider}  model={_settings.GetModel(_settings.AiProvider)}");
+
             var assistantVm = new ChatMessageViewModel
             {
                 Role = ChatRole.Assistant, Content = string.Empty, IsStreaming = true
@@ -674,20 +695,29 @@ namespace DynamoCopilot.Extension.ViewModels
             IsStreaming = true;
 
             var contentBuilder = new StringBuilder();
+            int tokenCount = 0;
 
             // Feature 3: fetch RAG context from local RevitAPI.xml
             string? ragContext = null;
             if (_settings.EnableRag)
             {
-                try { ragContext = await _ragService.FetchContextAsync(userText, ct); }
-                catch { /* fail open */ }
+                try
+                {
+                    ragContext = await _ragService.FetchContextAsync(userText, ct);
+                    CopilotLogger.Log("Streaming", $"RAG context chars={ragContext?.Length ?? 0}");
+                }
+                catch (Exception ex) { CopilotLogger.Log("RAG fetch failed (non-fatal)", ex); }
             }
 
             try
             {
                 var messages = BuildMessageList(engineName, ragContext);
+                CopilotLogger.Log("Streaming", $"sending {messages.Count} messages to LLM");
+                bool firstToken = true;
                 await foreach (var token in _llmService.SendStreamingAsync(messages, ct))
                 {
+                    if (firstToken) { CopilotLogger.Log("Streaming", "first token received"); firstToken = false; }
+                    tokenCount++;
                     contentBuilder.Append(token);
                     assistantVm.Content = contentBuilder.ToString();
                     RequestScrollToBottom?.Invoke();
@@ -695,6 +725,7 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             catch (OperationCanceledException)
             {
+                CopilotLogger.Log("Streaming", "cancelled by user");
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 return;
@@ -703,6 +734,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 ex.Message.Contains("Session expired") ||
                 ex.Message.Contains("log in"))
             {
+                CopilotLogger.Log("Streaming session expired", ex);
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 Logout();
@@ -710,23 +742,28 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             catch (Exception ex)
             {
+                CopilotLogger.Log("Streaming LLM error", ex);
                 assistantVm.Content     = $"Error: {ex.Message}";
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 return;
             }
 
+            CopilotLogger.Log("Streaming", $"complete  tokens={tokenCount}  chars={contentBuilder.Length}");
+
             var fullContent = contentBuilder.ToString();
             var codeSnippet = ExtractFirstCodeBlock(fullContent);
+            CopilotLogger.Log("Streaming", $"codeBlock={codeSnippet != null}  codeChars={codeSnippet?.Length ?? 0}");
 
             // Feature 2: validate + auto-fix Revit enum values in generated code
             if (codeSnippet != null && _settings.EnableCodeValidation)
             {
                 var validation = RevitEnumValidator.Instance.Validate(codeSnippet);
+                CopilotLogger.Log("Validation", $"isValid={validation.IsValid}  issues={validation.Issues.Count}");
                 if (!validation.IsValid)
                 {
-                    string? fixedCode = await RunAutoFixLoopAsync(codeSnippet, validation, ct)
-                                             .ConfigureAwait(false);
+                    string? fixedCode = await RunAutoFixLoopAsync(codeSnippet, validation, ct);
+                    CopilotLogger.Log("Validation", $"autoFix={fixedCode != null}");
                     if (fixedCode != null)
                     {
                         fullContent = fullContent.Replace(codeSnippet, fixedCode);
@@ -743,12 +780,13 @@ namespace DynamoCopilot.Extension.ViewModels
             assistantVm.CodeSnippet = codeSnippet;
             assistantVm.IsStreaming = false;
             IsStreaming = false;
+            CopilotLogger.Log("Streaming", "UI updated — done");
 
             _currentSession.Messages.Add(new ChatMessage
             {
                 Role = ChatRole.Assistant, Content = fullContent, CodeSnippet = codeSnippet
             });
-            _historyService.Save(_currentSession);
+            try { _historyService.Save(_currentSession); } catch { }
         }
 
         private async Task<string?> RunAutoFixLoopAsync(
@@ -850,8 +888,8 @@ namespace DynamoCopilot.Extension.ViewModels
                 // within the history window sent to the LLM. If so, skip re-sending the
                 // code — the LLM already has it in context from its previous response.
                 var (lastCode, lastCodeIndex) = GetLastGeneratedCode();
-                int historyStart = Math.Max(0, _currentSession.Messages.Count - _settings.MaxHistoryMessages);
-                bool codeInHistory  = lastCodeIndex >= historyStart;
+                bool codeInHistory = ChatContextBuilder.IsMessageInContext(
+                    _currentSession.Messages, lastCodeIndex, _settings.MaxHistoryTokens);
                 bool codeUnchanged  = lastCode != null
                                    && codeInHistory
                                    && !string.IsNullOrWhiteSpace(code)
@@ -879,7 +917,7 @@ namespace DynamoCopilot.Extension.ViewModels
                               $"Please fix the error and return the complete fixed code in a single ```python ... ``` block.";
                 }
 
-                await SendMessageAsync(message);
+                await SendMessageAsync("!direct " + message);
             }
             catch (Exception ex) { ShowStatus($"Could not read error: {ex.Message}"); }
         }
@@ -1105,13 +1143,8 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private List<ChatMessage> BuildMessageList(string engineName, string? ragContext = null)
         {
-            var result = new List<ChatMessage>();
-            result.Add(SystemPromptFactory.Build(engineName, ragContext));
-            var msgs  = _currentSession.Messages;
-            int start = Math.Max(0, msgs.Count - _settings.MaxHistoryMessages);
-            for (int i = start; i < msgs.Count; i++)
-                result.Add(msgs[i]);
-            return result;
+            var systemPrompt = SystemPromptFactory.Build(engineName, ragContext);
+            return ChatContextBuilder.Build(systemPrompt, _currentSession.Messages, _settings.MaxHistoryTokens);
         }
 
         /// <summary>
@@ -1130,17 +1163,11 @@ namespace DynamoCopilot.Extension.ViewModels
         }
 
         /// <summary>
-        /// Returns the most recent non-system messages from the current session for use as
-        /// classifier context. The SpecGeneratorService itself limits to the last N turns.
+        /// Returns a compact, anchor-first message list for the spec classifier.
+        /// Always includes early messages (user instructions) + the recent tail.
         /// </summary>
         private IList<ChatMessage> GetRecentHistoryForClassifier()
-        {
-            var msgs   = _currentSession.Messages;
-            var result = new List<ChatMessage>(msgs.Count);
-            foreach (var m in msgs)
-                if (m.Role != ChatRole.System) result.Add(m);
-            return result;
-        }
+            => ChatContextBuilder.BuildForClassifier(_currentSession.Messages);
 
         /// <summary>
         /// Normalises a Python code string for comparison: collapses line endings and trims whitespace.
@@ -1248,6 +1275,9 @@ namespace DynamoCopilot.Extension.ViewModels
                 RegexOptions.Singleline | RegexOptions.IgnoreCase).Trim();
             return string.IsNullOrWhiteSpace(result) ? string.Empty : result;
         }
+
+        private static string Truncate(string s, int max)
+            => s.Length <= max ? s : s.Substring(0, max) + "…";
 
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? n = null)

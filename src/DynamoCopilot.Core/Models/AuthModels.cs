@@ -35,17 +35,8 @@ namespace DynamoCopilot.Core.Models
         [JsonPropertyName("email")]
         public string Email { get; set; } = string.Empty;
 
-        [JsonPropertyName("dailyRequestCount")]
-        public int DailyRequestCount { get; set; }
-
         [JsonPropertyName("dailyTokenCount")]
         public int DailyTokenCount { get; set; }
-
-        [JsonPropertyName("effectiveRequestLimit")]
-        public int EffectiveRequestLimit { get; set; }
-
-        [JsonPropertyName("effectiveTokenLimit")]
-        public int EffectiveTokenLimit { get; set; }
 
         [JsonPropertyName("isActive")]
         public bool IsActive { get; set; }

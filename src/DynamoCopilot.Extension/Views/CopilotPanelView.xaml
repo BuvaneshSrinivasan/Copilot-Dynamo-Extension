@@ -513,7 +513,7 @@
                     <!-- Steps summary -->
                     <TextBlock Text="Steps:" FontSize="11" FontWeight="SemiBold"
                                Foreground="{StaticResource MutedBrush}" Margin="0,0,0,3"/>
-                    <TextBox Text="{Binding StepsSummary}"
+                    <TextBox Text="{Binding StepsSummary, Mode=OneWay}"
                              IsReadOnly="True" Background="Transparent" BorderThickness="0"
                              Foreground="{StaticResource TextBrush}" FontSize="12"
                              TextWrapping="Wrap" Padding="0" Margin="0,0,0,8"/>
@@ -615,6 +615,7 @@
             <ContentControl>
                 <ContentControl.Style>
                     <Style TargetType="ContentControl">
+                        <Setter Property="Content"         Value="{Binding}"/>
                         <Setter Property="ContentTemplate" Value="{StaticResource AssistantMessageTemplate}"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsUser}" Value="True">
@@ -628,9 +629,6 @@
                         </Style.Triggers>
                     </Style>
                 </ContentControl.Style>
-                <ContentControl.Content>
-                    <Binding/>
-                </ContentControl.Content>
             </ContentControl>
         </DataTemplate>
 
@@ -952,19 +950,38 @@
                                   Fill="{StaticResource MutedBrush}" Width="14" Height="14" Stretch="Uniform"/>
                         </Button>
 
-                        <!-- Settings / account icon — click to expand combined settings panel -->
-                        <Button ToolTip="Settings &amp; account"
-                                Click="OnSettingsClick"
+                        <!-- AI Settings button (gear icon) -->
+                        <Button ToolTip="AI settings"
+                                Click="OnAiSettingsClick"
                                 Style="{StaticResource FlatBtn}"
-                                Padding="5">
-                            <!-- Gear icon (full path with outer ring) -->
+                                Padding="5" Margin="0,0,4,0">
                             <Path Data="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"
                                   Width="16" Height="16" Stretch="Uniform">
                                 <Path.Style>
                                     <Style TargetType="Path">
                                         <Setter Property="Fill" Value="{StaticResource MutedBrush}"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ShowSettings}" Value="True">
+                                            <DataTrigger Binding="{Binding ShowAiPanel}" Value="True">
+                                                <Setter Property="Fill" Value="{StaticResource AccentBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Button>
+
+                        <!-- User info button (person icon) -->
+                        <Button ToolTip="Account info"
+                                Click="OnUserInfoClick"
+                                Style="{StaticResource FlatBtn}"
+                                Padding="5">
+                            <Path Data="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.029 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z"
+                                  Width="16" Height="16" Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Fill" Value="{StaticResource MutedBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowUserPanel}" Value="True">
                                                 <Setter Property="Fill" Value="{StaticResource AccentBrush}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
@@ -976,20 +993,136 @@
                 </Grid>
             </Border>
 
-            <!-- ── Combined Settings Panel (Row 1, toggled by gear icon) ──────── -->
+            <!-- ── AI Settings Panel (Row 1, toggled by gear icon) ─────────── -->
             <Border Grid.Row="1"
                     Background="#252526"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="14,14"
-                    Visibility="{Binding ShowSettings, Converter={StaticResource BoolToVis}}">
-                <StackPanel>
+                    Visibility="{Binding ShowAiPanel, Converter={StaticResource BoolToVis}}">
+                <StackPanel DataContext="{Binding SettingsVm}">
 
-                    <!-- ── Account section ── -->
-                    <TextBlock Text="Account"
+                    <TextBlock Text="AI Configuration"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{StaticResource MutedBrush}"
-                               Margin="0,0,0,8"/>
+                               Margin="0,0,0,10"/>
+
+                    <!-- Provider -->
+                    <TextBlock Text="Provider" FontSize="11"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+                    <ComboBox ItemsSource="{Binding Providers}"
+                              SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
+                              Style="{StaticResource DarkComboBox}"
+                              Margin="0,0,0,10"/>
+
+                    <!-- API key (hidden for Ollama) -->
+                    <StackPanel Visibility="{Binding NeedsApiKey, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding ApiKeyLabel}" FontSize="11"
+                                   Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+                        <PasswordBox x:Name="ApiKeyBox"
+                                     Style="{StaticResource DarkPasswordBox}"
+                                     PasswordChanged="OnApiKeyChanged"
+                                     Margin="0,0,0,10"/>
+                    </StackPanel>
+
+                    <!-- Model name -->
+                    <TextBlock Text="Model" FontSize="11"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding ModelName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DarkInput}">
+                            <TextBox.Resources>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource DarkInput}">
+                                    <Style.Triggers>
+                                        <Trigger Property="Text" Value="">
+                                            <Setter Property="Background">
+                                                <Setter.Value>
+                                                    <VisualBrush AlignmentX="Left" AlignmentY="Center" Stretch="None">
+                                                        <VisualBrush.Visual>
+                                                            <TextBlock Text="{Binding ModelPlaceholder}"
+                                                                       Foreground="#555" FontSize="12"
+                                                                       Margin="8,0,0,0"/>
+                                                        </VisualBrush.Visual>
+                                                    </VisualBrush>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Resources>
+                        </TextBox>
+                        <Button Grid.Column="1" Content="↺"
+                                Command="{Binding ResetModelCommand}"
+                                ToolTip="Reset to default model"
+                                Style="{StaticResource FlatBtn}"
+                                FontSize="14" Padding="6,5" Margin="4,0,0,0"
+                                Foreground="{StaticResource MutedBrush}"/>
+                    </Grid>
+
+                    <!-- Ollama URL (Ollama only) -->
+                    <StackPanel Visibility="{Binding IsOllamaSelected, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Ollama URL" FontSize="11"
+                                   Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding OllamaUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DarkInput}"
+                                 Margin="0,0,0,10"/>
+                    </StackPanel>
+
+                    <!-- Status message -->
+                    <TextBlock Text="{Binding StatusMessage}"
+                               FontSize="11" TextWrapping="Wrap"
+                               Margin="0,0,0,10"
+                               Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="#73C991"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusMessage[0]}" Value="E">
+                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusMessage[0]}" Value="T">
+                                        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Test + Save buttons -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0"
+                                Content="Test Connection"
+                                Command="{Binding TestCommand}"
+                                Style="{StaticResource SecondaryBtn}"
+                                Padding="0,7" FontSize="12"/>
+                        <Button Grid.Column="2"
+                                Content="Save"
+                                Command="{Binding SaveCommand}"
+                                Style="{StaticResource PrimaryBtn}"
+                                Padding="0,7" FontSize="12"/>
+                    </Grid>
+
+                </StackPanel>
+            </Border>
+
+            <!-- ── User Info Panel (Row 1, toggled by person icon) ───────────── -->
+            <Border Grid.Row="1"
+                    Background="#252526"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="14,14"
+                    Visibility="{Binding ShowUserPanel, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
 
                     <!-- Email row -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -1002,7 +1135,7 @@
                     </StackPanel>
 
                     <!-- Licence status row -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Ellipse Width="8" Height="8" Margin="0,0,7,0" VerticalAlignment="Center">
                             <Ellipse.Style>
                                 <Style TargetType="Ellipse">
@@ -1031,146 +1164,22 @@
                         </TextBlock>
                     </StackPanel>
 
+                    <!-- Tokens used today -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <TextBlock Text="Tokens today:"
+                                   FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding TokensDisplay}"
+                                   FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
                     <!-- Sign out -->
                     <Button Content="Sign Out"
                             Style="{StaticResource SecondaryBtn}"
                             Padding="0,7" FontSize="12"
-                            Click="OnSignOutClick"
-                            Margin="0,0,0,14"/>
-
-                    <!-- Divider before AI settings -->
-                    <Border BorderBrush="{StaticResource BorderBrush}"
-                            BorderThickness="0,1,0,0"
-                            Margin="0,0,0,12"/>
-
-                    <!-- ── AI Configuration section (expandable) ── -->
-                    <Button Click="OnToggleAiConfigClick"
-                            Style="{StaticResource FlatBtn}"
-                            Padding="0,4"
-                            Margin="0,0,0,10"
-                            HorizontalContentAlignment="Left">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding SettingsVm.AiConfigArrow}"
-                                       FontSize="11" Foreground="{StaticResource AccentBrush}"
-                                       Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="AI Configuration"
-                                       FontSize="12" FontWeight="SemiBold"
-                                       Foreground="{StaticResource AccentBrush}"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-
-                    <!-- AI config body (collapses when toggle is clicked) -->
-                    <StackPanel DataContext="{Binding SettingsVm}"
-                                Visibility="{Binding IsAiConfigExpanded, Converter={StaticResource BoolToVis}}">
-
-                        <!-- Provider -->
-                        <TextBlock Text="Provider" FontSize="11"
-                                   Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                        <ComboBox ItemsSource="{Binding Providers}"
-                                  SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
-                                  Style="{StaticResource DarkComboBox}"
-                                  Margin="0,0,0,10"/>
-
-                        <!-- API key (hidden for Ollama) -->
-                        <StackPanel Visibility="{Binding NeedsApiKey, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="{Binding ApiKeyLabel}" FontSize="11"
-                                       Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                            <PasswordBox x:Name="ApiKeyBox"
-                                         Style="{StaticResource DarkPasswordBox}"
-                                         PasswordChanged="OnApiKeyChanged"
-                                         Margin="0,0,0,10"/>
-                        </StackPanel>
-
-                        <!-- Model name -->
-                        <TextBlock Text="Model" FontSize="11"
-                                   Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding ModelName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource DarkInput}">
-                                <TextBox.Resources>
-                                    <Style TargetType="TextBox" BasedOn="{StaticResource DarkInput}">
-                                        <Style.Triggers>
-                                            <Trigger Property="Text" Value="">
-                                                <Setter Property="Background">
-                                                    <Setter.Value>
-                                                        <VisualBrush AlignmentX="Left" AlignmentY="Center" Stretch="None">
-                                                            <VisualBrush.Visual>
-                                                                <TextBlock Text="{Binding ModelPlaceholder}"
-                                                                           Foreground="#555" FontSize="12"
-                                                                           Margin="8,0,0,0"/>
-                                                            </VisualBrush.Visual>
-                                                        </VisualBrush>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBox.Resources>
-                            </TextBox>
-                            <Button Grid.Column="1" Content="↺"
-                                    Command="{Binding ResetModelCommand}"
-                                    ToolTip="Reset to default model"
-                                    Style="{StaticResource FlatBtn}"
-                                    FontSize="14" Padding="6,5" Margin="4,0,0,0"
-                                    Foreground="{StaticResource MutedBrush}"/>
-                        </Grid>
-
-                        <!-- Ollama URL (Ollama only) -->
-                        <StackPanel Visibility="{Binding IsOllamaSelected, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="Ollama URL" FontSize="11"
-                                       Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                            <TextBox Text="{Binding OllamaUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource DarkInput}"
-                                     Margin="0,0,0,10"/>
-                        </StackPanel>
-
-                        <!-- Status message -->
-                        <TextBlock Text="{Binding StatusMessage}"
-                                   FontSize="11" TextWrapping="Wrap"
-                                   Margin="0,0,0,10"
-                                   Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="#73C991"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding StatusMessage[0]}" Value="E">
-                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding StatusMessage[0]}" Value="T">
-                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-
-                        <!-- Test + Save buttons -->
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="8"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0"
-                                    Content="Test Connection"
-                                    Command="{Binding TestCommand}"
-                                    Style="{StaticResource SecondaryBtn}"
-                                    Padding="0,7" FontSize="12"/>
-                            <Button Grid.Column="2"
-                                    Content="Save"
-                                    Command="{Binding SaveCommand}"
-                                    Style="{StaticResource PrimaryBtn}"
-                                    Padding="0,7" FontSize="12"/>
-                        </Grid>
-
-                    </StackPanel>
-                    <!-- end AI config body -->
+                            Click="OnSignOutClick"/>
 
                 </StackPanel>
             </Border>

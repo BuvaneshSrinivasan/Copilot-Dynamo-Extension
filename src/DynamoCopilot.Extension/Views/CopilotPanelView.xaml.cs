@@ -9,6 +9,7 @@ namespace DynamoCopilot.Extension.Views
     public partial class CopilotPanelView : UserControl
     {
         private readonly CopilotPanelViewModel _viewModel;
+        private bool _suppressApiKeyUpdate;
 
         public CopilotPanelView(CopilotPanelViewModel viewModel)
         {
@@ -18,6 +19,10 @@ namespace DynamoCopilot.Extension.Views
 
             _viewModel.RequestScrollToBottom = ScrollToBottom;
             _viewModel.Messages.CollectionChanged += (_, _) => ScrollToBottom();
+
+            // Populate ApiKeyBox on load and whenever the provider changes
+            ApiKeyBox.Password = _viewModel.SettingsVm.ApiKey;
+            _viewModel.SettingsVm.PropertyChanged += OnSettingsVmPropertyChanged;
         }
 
         // ── Auth ──────────────────────────────────────────────────────────────
@@ -43,16 +48,27 @@ namespace DynamoCopilot.Extension.Views
             RegisterConfirmPasswordBox.Clear();
         }
 
-        // ── Settings (combined panel: account info + AI config) ──────────────────
+        // ── Settings (separate AI settings + user info panels) ──────────────────
 
-        private void OnSettingsClick(object sender, RoutedEventArgs e)
-            => _viewModel.ToggleSettings();
+        private void OnAiSettingsClick(object sender, RoutedEventArgs e)
+            => _viewModel.ToggleAiPanel();
 
-        private void OnToggleAiConfigClick(object sender, RoutedEventArgs e)
-            => _viewModel.SettingsVm.ToggleAiConfig();
+        private void OnUserInfoClick(object sender, RoutedEventArgs e)
+            => _viewModel.ToggleUserPanel();
+
+        private void OnSettingsVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(SettingsPanelViewModel.ApiKey))
+            {
+                _suppressApiKeyUpdate = true;
+                ApiKeyBox.Password = _viewModel.SettingsVm.ApiKey;
+                _suppressApiKeyUpdate = false;
+            }
+        }
 
         private void OnApiKeyChanged(object sender, RoutedEventArgs e)
         {
+            if (_suppressApiKeyUpdate) return;
             if (sender is System.Windows.Controls.PasswordBox pb)
                 _viewModel.SettingsVm.ApiKey = pb.Password;
         }

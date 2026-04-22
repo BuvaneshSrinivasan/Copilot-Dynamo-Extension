@@ -9,6 +9,30 @@ using DynamoCopilot.Core.Models;
 namespace DynamoCopilot.Core.Settings
 {
     /// <summary>
+    /// Per-provider model + API key pair (used for all providers except Ollama).
+    /// </summary>
+    public sealed class ProviderConfig
+    {
+        [JsonPropertyName("model")]
+        public string Model { get; set; } = string.Empty;
+
+        [JsonPropertyName("apiKey")]
+        public string ApiKey { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Ollama-specific config: no API key, just the model name and base URL.
+    /// </summary>
+    public sealed class OllamaConfig
+    {
+        [JsonPropertyName("model")]
+        public string Model { get; set; } = "llama3.2";
+
+        [JsonPropertyName("url")]
+        public string Url { get; set; } = "http://localhost:11434";
+    }
+
+    /// <summary>
     /// Application-level settings persisted to %AppData%\DynamoCopilot\settings.json.
     /// </summary>
     public sealed class DynamoCopilotSettings
@@ -24,8 +48,8 @@ namespace DynamoCopilot.Core.Settings
 
         [JsonPropertyName("serverUrl")]
         public string ServerUrl { get; set; } =
-            "https://radiant-determination-production.up.railway.app";
-
+            "https://copilot-dynamo-extension-production.up.railway.app";
+            
         [JsonPropertyName("useLocalServer")]
         public bool UseLocalServer { get; set; } = false;
 
@@ -43,67 +67,72 @@ namespace DynamoCopilot.Core.Settings
         public AiProvider AiProvider { get; set; } = AiProvider.OpenAI;
 
         /// <summary>
-        /// Per-provider API keys keyed by provider name string (e.g. "OpenAI", "Gemini").
+        /// Per-provider config (model + API key) keyed by provider name string
+        /// (e.g. "OpenAI", "Gemini"). Ollama is excluded — use <see cref="Ollama"/> instead.
         /// Never logged or transmitted to our server.
         /// </summary>
-        [JsonPropertyName("apiKeys")]
-        public Dictionary<string, string> ApiKeys { get; set; } = new();
+        [JsonPropertyName("providers")]
+        public Dictionary<string, ProviderConfig> Providers { get; set; } = new();
 
         /// <summary>
-        /// Legacy single-key field — kept for JSON round-trip compatibility.
-        /// Prefer <see cref="ApiKeys"/> for reading/writing keys.
+        /// Ollama-specific config: last-used model name and base URL. No API key.
         /// </summary>
-        [JsonPropertyName("apiKey")]
-        public string ApiKey { get; set; } = string.Empty;
-
-        /// <summary>Model name exactly as the provider expects it (e.g. "gpt-4o", "gemini-2.5-flash").</summary>
-        [JsonPropertyName("modelName")]
-        public string ModelName { get; set; } = string.Empty;
-
-        // ── Ollama-specific ───────────────────────────────────────────────────
-
-        /// <summary>Base URL for a local or remote Ollama instance.</summary>
-        [JsonPropertyName("ollamaUrl")]
-        public string OllamaUrl { get; set; } = "http://localhost:11434";
+        [JsonPropertyName("ollama")]
+        public OllamaConfig Ollama { get; set; } = new();
 
         // ── Chat behaviour ────────────────────────────────────────────────────
 
+        [JsonPropertyName("maxHistoryTokens")]
+        public int MaxHistoryTokens { get; set; } = 20_000;
+
+        /// <summary>Legacy field kept for JSON round-trip compatibility.</summary>
         [JsonPropertyName("maxHistoryMessages")]
         public int MaxHistoryMessages { get; set; } = 40;
 
         // ── Feature flags ─────────────────────────────────────────────────────
 
-        /// <summary>Enable BM25 RAG context injection from local RevitAPI.xml.</summary>
         [JsonPropertyName("enableRag")]
         public bool EnableRag { get; set; } = true;
 
-        /// <summary>Optional override path to the directory containing RevitAPI.xml.</summary>
         [JsonPropertyName("revitApiXmlPath")]
         public string RevitApiXmlPath { get; set; } = string.Empty;
 
-        /// <summary>Enable post-generation Revit enum validation + LLM auto-fix.</summary>
         [JsonPropertyName("enableCodeValidation")]
         public bool EnableCodeValidation { get; set; } = true;
 
-        /// <summary>Enable spec-first workflow (classify → spec card → code gen).</summary>
         [JsonPropertyName("enableSpecFirst")]
         public bool EnableSpecFirst { get; set; } = true;
 
-        // ── Per-provider key helpers ──────────────────────────────────────────
+        // ── Per-provider helpers ──────────────────────────────────────────────
+
+        public ProviderConfig GetProvider(AiProvider provider)
+        {
+            if (provider == AiProvider.Ollama)
+                throw new InvalidOperationException("Use the Ollama property for Ollama config.");
+            return Providers.TryGetValue(provider.ToString(), out var cfg) ? cfg : new ProviderConfig();
+        }
+
+        public void SetProvider(AiProvider provider, string model, string apiKey)
+        {
+            if (provider == AiProvider.Ollama)
+                throw new InvalidOperationException("Use the Ollama property for Ollama config.");
+            Providers[provider.ToString()] = new ProviderConfig { Model = model, ApiKey = apiKey };
+        }
 
         public string GetApiKey(AiProvider provider) =>
-            ApiKeys.TryGetValue(provider.ToString(), out var key) ? key : string.Empty;
+            provider == AiProvider.Ollama ? string.Empty : GetProvider(provider).ApiKey;
 
-        public void SetApiKey(AiProvider provider, string key) =>
-            ApiKeys[provider.ToString()] = key;
+        public string GetModel(AiProvider provider) =>
+            provider == AiProvider.Ollama
+                ? (string.IsNullOrWhiteSpace(Ollama.Model) ? DefaultModelFor(provider) : Ollama.Model)
+                : (string.IsNullOrWhiteSpace(GetProvider(provider).Model) ? DefaultModelFor(provider) : GetProvider(provider).Model);
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        /// <summary>Default model name shown as placeholder for each provider.</summary>
         public static string DefaultModelFor(AiProvider provider) => provider switch
         {
             AiProvider.OpenAI   => "gpt-4o",
-            AiProvider.Gemini   => "gemini-2.5-flash",
+            AiProvider.Gemini   => "gemini-3-flash-preview",
             AiProvider.Claude   => "claude-sonnet-4-6",
             AiProvider.DeepSeek => "deepseek-chat",
             AiProvider.Ollama   => "llama3.2",
@@ -121,19 +150,93 @@ namespace DynamoCopilot.Core.Settings
 
             try
             {
-                var json = File.ReadAllText(SettingsFilePath, Encoding.UTF8);
+                var fileBytes = File.ReadAllBytes(SettingsFilePath);
+                bool isLegacy;
+                string json;
+
+                if (Services.SecureStorage.TryDecrypt(fileBytes, out var decrypted))
+                {
+                    json     = decrypted!;
+                    isLegacy = false;
+                }
+                else
+                {
+                    // Legacy plaintext file — read as UTF-8 and migrate on save
+                    json     = Encoding.UTF8.GetString(fileBytes);
+                    isLegacy = true;
+                }
+
+                // Deserialize via a shim that handles the legacy flat format
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
                 var settings = JsonSerializer.Deserialize<DynamoCopilotSettings>(json)
                     ?? new DynamoCopilotSettings();
 
-                // Migrate legacy single apiKey into the per-provider dict if not already there
-                if (!string.IsNullOrEmpty(settings.ApiKey) &&
-                    !settings.ApiKeys.ContainsKey(settings.AiProvider.ToString()))
+                // ── Migrate legacy flat fields ────────────────────────────────
+                // Legacy: { "apiKeys": { "Gemini": "key" }, "modelName": "...", "ollamaUrl": "..." }
+                if (root.TryGetProperty("apiKeys", out var legacyKeysEl) &&
+                    legacyKeysEl.ValueKind == JsonValueKind.Object)
                 {
-                    settings.ApiKeys[settings.AiProvider.ToString()] = settings.ApiKey;
+                    foreach (var kv in legacyKeysEl.EnumerateObject())
+                    {
+                        var name = kv.Name;
+                        var key  = kv.Value.GetString() ?? string.Empty;
+                        if (string.IsNullOrWhiteSpace(key)) continue;
+                        if (!settings.Providers.ContainsKey(name))
+                            settings.Providers[name] = new ProviderConfig { ApiKey = key };
+                        else if (string.IsNullOrWhiteSpace(settings.Providers[name].ApiKey))
+                            settings.Providers[name].ApiKey = key;
+                    }
                 }
 
-                // Keep ApiKey in sync with the active provider
-                settings.ApiKey = settings.GetApiKey(settings.AiProvider);
+                if (root.TryGetProperty("apiKey", out var legacyKeyEl))
+                {
+                    var legacyKey = legacyKeyEl.GetString() ?? string.Empty;
+                    var provName  = settings.AiProvider.ToString();
+                    if (!string.IsNullOrWhiteSpace(legacyKey) &&
+                        settings.AiProvider != AiProvider.Ollama &&
+                        (!settings.Providers.TryGetValue(provName, out var existing) ||
+                         string.IsNullOrWhiteSpace(existing.ApiKey)))
+                    {
+                        if (!settings.Providers.ContainsKey(provName))
+                            settings.Providers[provName] = new ProviderConfig();
+                        settings.Providers[provName].ApiKey = legacyKey;
+                    }
+                }
+
+                if (root.TryGetProperty("modelName", out var legacyModelEl))
+                {
+                    var legacyModel = legacyModelEl.GetString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(legacyModel))
+                    {
+                        var provName = settings.AiProvider.ToString();
+                        if (settings.AiProvider == AiProvider.Ollama)
+                        {
+                            if (string.IsNullOrWhiteSpace(settings.Ollama.Model))
+                                settings.Ollama.Model = legacyModel;
+                        }
+                        else
+                        {
+                            if (!settings.Providers.ContainsKey(provName))
+                                settings.Providers[provName] = new ProviderConfig();
+                            if (string.IsNullOrWhiteSpace(settings.Providers[provName].Model))
+                                settings.Providers[provName].Model = legacyModel;
+                        }
+                    }
+                }
+
+                if (root.TryGetProperty("ollamaUrl", out var legacyOllamaUrlEl))
+                {
+                    var legacyUrl = legacyOllamaUrlEl.GetString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(legacyUrl) &&
+                        settings.Ollama.Url == "http://localhost:11434")
+                        settings.Ollama.Url = legacyUrl;
+                }
+
+                // Migrate legacy plaintext file to encrypted format on first load
+                if (isLegacy)
+                    settings.Save();
 
                 return settings;
             }
@@ -147,7 +250,7 @@ namespace DynamoCopilot.Core.Settings
         {
             Directory.CreateDirectory(AppDataDir);
             var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(SettingsFilePath, json, Encoding.UTF8);
+            File.WriteAllBytes(SettingsFilePath, Services.SecureStorage.Encrypt(json));
         }
     }
 }

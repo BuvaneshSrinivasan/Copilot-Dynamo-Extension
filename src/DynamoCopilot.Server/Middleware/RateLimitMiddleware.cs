@@ -37,18 +37,21 @@ public class RateLimitMiddleware
     // Singleton dependencies go in the constructor (created once, thread-safe)
     private readonly RequestDelegate _next;
     private readonly ILogger<RateLimitMiddleware> _logger;
+    private readonly int _defaultDailyRequests;
+    private readonly int _defaultDailyTokens;
 
-    public RateLimitMiddleware(RequestDelegate next, ILogger<RateLimitMiddleware> logger)
+    public RateLimitMiddleware(RequestDelegate next, ILogger<RateLimitMiddleware> logger, IConfiguration config)
     {
         _next = next;
         _logger = logger;
+        _defaultDailyRequests = config.GetValue<int>("RateLimit:DailyRequestLimit", 30);
+        _defaultDailyTokens   = config.GetValue<int>("RateLimit:DailyTokenLimit",   40_000);
     }
 
     // Scoped dependencies go as InvokeAsync parameters (resolved fresh per request)
     public async Task InvokeAsync(
         HttpContext context,
         AppDbContext db,
-        IConfiguration config,
         UsageTracker usageTracker)
     {
         // ── ONLY RATE-LIMIT THE CHAT ENDPOINT ─────────────────────────────────
@@ -111,24 +114,35 @@ public class RateLimitMiddleware
             await db.SaveChangesAsync();
         }
 
-        // ── RESOLVE EFFECTIVE TOKEN LIMIT ────────────────────────────────────
-        // Per-user limit (stored in DB) overrides the global default from config.
-        // null in the DB means "use the global default".
-        var tokenLimit = user.TokenLimit
-            ?? int.Parse(config["RateLimit:DailyTokenLimit"] ?? "40000");
+        // ── ENFORCE RATE LIMITS ───────────────────────────────────────────────
+        var requestLimit = user.RequestLimit ?? _defaultDailyRequests;
+        var tokenLimit   = user.TokenLimit   ?? _defaultDailyTokens;
 
-        // ── CHECK TOKEN LIMIT ─────────────────────────────────────────────────
+        if (user.DailyRequestCount >= requestLimit)
+        {
+            context.Response.StatusCode = 429;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Daily request limit reached. Your quota resets at midnight UTC.",
+                resetAt = DateTime.UtcNow.Date.AddDays(1)
+            });
+            return;
+        }
+
         if (user.DailyTokenCount >= tokenLimit)
         {
             context.Response.StatusCode = 429;
             await context.Response.WriteAsJsonAsync(new
             {
-                error = "Daily token limit reached. Your usage resets at midnight UTC.",
-                tokensUsed = user.DailyTokenCount,
-                tokenLimit
+                error = "Daily token limit reached. Your quota resets at midnight UTC.",
+                resetAt = DateTime.UtcNow.Date.AddDays(1)
             });
             return;
         }
+
+        // Increment request count before passing on (recorded even if the stream fails mid-way)
+        user.DailyRequestCount++;
+        await db.SaveChangesAsync();
 
         // ── PASS TO THE NEXT MIDDLEWARE / ENDPOINT ────────────────────────────
         await _next(context);
@@ -143,8 +157,8 @@ public class RateLimitMiddleware
             await db.SaveChangesAsync();
 
             _logger.LogInformation(
-                "User {UserId} used {Tokens} tokens. Daily total: {DailyTokens}/{TokenLimit}",
-                userId, usageTracker.TotalTokens, user.DailyTokenCount, tokenLimit);
+                "User {UserId} used {Tokens} tokens. Daily total: {DailyTokens}",
+                userId, usageTracker.TotalTokens, user.DailyTokenCount);
         }
     }
 }

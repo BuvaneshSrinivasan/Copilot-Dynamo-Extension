@@ -19,9 +19,6 @@ namespace DynamoCopilot.Core.Services
         private const string SpecPrefix = "TYPE: SPEC|";
         private const string ChatPrefix = "TYPE: CHAT|";
 
-        // How many recent assistant+user turns to include for context
-        private const int HistoryTurnsForContext = 3;
-
         private readonly ILlmService _llm;
 
         public SpecGeneratorService(ILlmService llm)
@@ -70,23 +67,23 @@ namespace DynamoCopilot.Core.Services
         {
             var messages = new List<ChatMessage> { BuildSystemPrompt(hasHistory) };
 
-            // Inject a summary of recent conversation turns so the classifier has context.
-            // We trim to the last N user+assistant turns to keep the token cost low.
+            // The caller (ViewModel) pre-selects history using ChatContextBuilder.BuildForClassifier,
+            // which already anchors early instructions + includes the recent tail with content
+            // truncated to 600 chars. We just need to format it into a context block here.
+            // Do NOT re-slice — we want all the pre-filtered messages, including the anchored
+            // early ones that contain standing user instructions.
             if (history != null && history.Count > 0)
             {
-                int take = HistoryTurnsForContext * 2; // each turn = 1 user + 1 assistant
-                int start = Math.Max(0, history.Count - take);
-
                 var contextSb = new StringBuilder();
-                contextSb.AppendLine("[Recent conversation context — use this to decide if the new message is a follow-up or a new request]");
-                for (int i = start; i < history.Count; i++)
+                contextSb.AppendLine("[Conversation context — use this to decide if the new message is a follow-up or a new request]");
+                foreach (var msg in history)
                 {
-                    var msg = history[i];
                     if (msg.Role == ChatRole.System) continue;
                     string role = msg.Role == ChatRole.User ? "User" : "Assistant";
-                    // Truncate long messages to keep tokens down
-                    string content = msg.Content?.Length > 300
-                        ? msg.Content.Substring(0, 300) + "..."
+                    // Content was already truncated by BuildForClassifier; apply a loose
+                    // safety cap here only to guard against very large individual messages.
+                    string content = msg.Content?.Length > 800
+                        ? msg.Content.Substring(0, 800) + "..."
                         : msg.Content ?? string.Empty;
                     contextSb.AppendLine($"{role}: {content}");
                 }
