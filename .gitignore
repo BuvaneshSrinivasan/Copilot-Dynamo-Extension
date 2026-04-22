@@ -1,6 +1,7 @@
 # Build outputs
 bin/
 obj/
+installer-wpf/payload.zip
 *.user
 *.suo
 .vs/

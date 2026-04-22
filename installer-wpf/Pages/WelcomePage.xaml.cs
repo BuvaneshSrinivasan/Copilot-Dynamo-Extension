@@ -17,7 +17,7 @@ public partial class WelcomePage : UserControl
         var asm     = Assembly.GetExecutingAssembly();
         var ver     = asm.GetName().Version;
         var company = System.Diagnostics.FileVersionInfo
-                           .GetVersionInfo(asm.Location).CompanyName;
+                           .GetVersionInfo(Environment.ProcessPath ?? string.Empty).CompanyName;
 
         if (ver is not null)
             VersionText.Text = $"v{ver.Major}.{ver.Minor}.{ver.Build}"

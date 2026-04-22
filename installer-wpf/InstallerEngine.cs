@@ -1,8 +1,10 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using DynamoCopilot.Core.Settings;
 
 namespace DynamoCopilot.Installer;
 
@@ -10,7 +12,7 @@ public record InstallStep(string Status, int Percent);
 
 public class InstallerEngine
 {
-    private const string ProductionUrl  = "https://radiant-determination-production.up.railway.app";
+    private static readonly string ProductionUrl = new DynamoCopilotSettings().ServerUrl;
     private const string LocalServerUrl = "http://localhost:8080";
     private const int    MaxHistory     = 40;
 
@@ -30,19 +32,9 @@ public class InstallerEngine
     {
         var appData  = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var destBase = Path.Combine(appData, "DynamoCopilot");
-        var distDir  = Path.Combine(AppContext.BaseDirectory, "dist");
 
-        progress.Report(new("Copying files (net4.8)…", 10));
-        await Task.Run(() => CopyTfm(distDir, destBase, "net48"), ct);
-
-        progress.Report(new("Copying files (net8.0)…", 30));
-        await Task.Run(() => CopyTfm(distDir, destBase, "net8.0-windows"), ct);
-
-        progress.Report(new("Copying AI models…", 50));
-        await Task.Run(() => CopyModels(destBase), ct);
-
-        progress.Report(new("Copying node database…", 60));
-        await Task.Run(() => CopyNodeDb(destBase), ct);
+        progress.Report(new("Extracting files…", 20));
+        await Task.Run(() => ExtractPayload(destBase), ct);
 
         progress.Report(new("Writing settings…", 70));
         await Task.Run(() => WriteSettings(destBase), ct);
@@ -58,20 +50,99 @@ public class InstallerEngine
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static void CopyTfm(string distDir, string destBase, string tfm)
+    private static void ExtractPayload(string destBase)
     {
-        var src = Path.Combine(distDir, tfm);
-        var dst = Path.Combine(destBase, tfm);
-        if (!Directory.Exists(src)) return;
+        // Layout: [exe bytes][zip bytes][zip_start_offset: int64 LE, 8 bytes]
+        // The 8-byte trailer tells us exactly where the zip region begins so we can
+        // give ZipArchive a SubStream over that region only — its internal offsets
+        // are then correct and it never sees the exe bytes.
+        var exePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Cannot determine executable path.");
 
-        Directory.CreateDirectory(dst);
-        foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+        using var exeStream = File.OpenRead(exePath);
+
+        exeStream.Seek(-8, SeekOrigin.End);
+        var buf = new byte[8];
+        exeStream.ReadExactly(buf);
+        var zipStart  = BitConverter.ToInt64(buf);
+        var zipLength = exeStream.Length - 8 - zipStart;
+
+        if (zipStart <= 0 || zipLength <= 0)
+            throw new InvalidOperationException(
+                "Payload not found. This installer may be corrupted — please re-download it.");
+
+        using var zipStream = new SubStream(exeStream, zipStart, zipLength);
+        using var zip = new ZipArchive(zipStream, ZipArchiveMode.Read);
+
+        foreach (var entry in zip.Entries)
         {
-            var rel    = Path.GetRelativePath(src, file);
-            var target = Path.Combine(dst, rel);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, overwrite: true);
+            if (string.IsNullOrEmpty(entry.Name)) continue; // skip directory entries
+
+            // zip layout:   dist/net48/…  →  destBase\net48\…
+            //               dist/net8.0-windows/…  →  destBase\net8.0-windows\…
+            //               models/…  →  destBase\models\…
+            //               nodes.db  →  destBase\nodes.db
+            var entryPath = entry.FullName.Replace('\\', '/');
+            var relPath = entryPath.StartsWith("dist/", StringComparison.OrdinalIgnoreCase)
+                ? entryPath["dist/".Length..]
+                : entryPath;
+
+            var destPath = Path.Combine(destBase, relPath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            entry.ExtractToFile(destPath, overwrite: true);
         }
+    }
+
+    // Exposes a contiguous sub-region of an existing stream as a seekable read-only stream.
+    private sealed class SubStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly long   _start;
+        private readonly long   _length;
+        private long _pos;
+
+        public SubStream(Stream inner, long start, long length)
+        {
+            _inner = inner; _start = start; _length = length;
+        }
+
+        public override bool CanRead  => true;
+        public override bool CanSeek  => true;
+        public override bool CanWrite => false;
+        public override long Length   => _length;
+
+        public override long Position
+        {
+            get => _pos;
+            set => Seek(value, SeekOrigin.Begin);
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var remaining = _length - _pos;
+            if (remaining <= 0) return 0;
+            count = (int)Math.Min(count, remaining);
+            _inner.Seek(_start + _pos, SeekOrigin.Begin);
+            var read = _inner.Read(buffer, offset, count);
+            _pos += read;
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            _pos = origin switch
+            {
+                SeekOrigin.Begin   => offset,
+                SeekOrigin.Current => _pos + offset,
+                SeekOrigin.End     => _length + offset,
+                _                  => throw new ArgumentOutOfRangeException(nameof(origin))
+            };
+            return _pos;
+        }
+
+        public override void Flush() { }
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static void WriteSettings(string destBase)
@@ -105,32 +176,6 @@ public class InstallerEngine
 
         File.WriteAllText(path, JsonSerializer.Serialize(settings,
             new JsonSerializerOptions { WriteIndented = true }));
-    }
-
-    private static void CopyNodeDb(string destBase)
-    {
-        var src = Path.Combine(AppContext.BaseDirectory, "nodes.db");
-        if (!File.Exists(src)) return;
-
-        Directory.CreateDirectory(destBase);
-        File.Copy(src, Path.Combine(destBase, "nodes.db"), overwrite: true);
-    }
-
-    private static void CopyModels(string destBase)
-    {
-        var src = Path.Combine(AppContext.BaseDirectory, "models");
-        if (!Directory.Exists(src)) return;
-
-        var dst = Path.Combine(destBase, "models");
-        Directory.CreateDirectory(dst);
-
-        foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
-        {
-            var rel    = Path.GetRelativePath(src, file);
-            var target = Path.Combine(dst, rel);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, overwrite: true);
-        }
     }
 
     private static void RegisterDynamo(string destBase)
