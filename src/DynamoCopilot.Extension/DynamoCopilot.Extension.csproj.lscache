@@ -65,6 +65,7 @@ obj/Debug/net48/
  GeneratedInternalTypeHelper.g.cs
  Views/CopilotPanelView.g.cs
 Services/
+ CopilotLogger.cs
  DynamoPackageDownloader.cs
  OnnxEmbeddingService.cs
  PackageStateService.cs
@@ -72,6 +73,7 @@ ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
+ SpecCardViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]
@@ -216,6 +218,7 @@ obj/Debug/net8.0-windows/
  GeneratedInternalTypeHelper.g.cs
  Views/CopilotPanelView.g.cs
 Services/
+ CopilotLogger.cs
  DynamoPackageDownloader.cs
  OnnxEmbeddingService.cs
  PackageStateService.cs
@@ -223,6 +226,7 @@ ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
+ SpecCardViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]

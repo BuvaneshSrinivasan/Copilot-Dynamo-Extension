@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
@@ -18,6 +19,9 @@ namespace DynamoCopilot.Extension.ViewModels
         private string     _apiKey    = string.Empty;
         private string     _modelName = string.Empty;
         private string     _ollamaUrl = string.Empty;
+
+        // Unsaved per-provider keys accumulated during this session
+        private readonly Dictionary<string, string> _workingKeys = new();
 
         private string _statusMessage = string.Empty;
         private bool   _isBusy;
@@ -45,8 +49,17 @@ namespace DynamoCopilot.Extension.ViewModels
             set
             {
                 if (_selectedProvider == value) return;
+
+                // Save current key before switching
+                _workingKeys[_selectedProvider.ToString()] = _apiKey;
+
                 _selectedProvider = value;
+
+                // Autofill the saved key for the new provider
+                _apiKey = _workingKeys.TryGetValue(value.ToString(), out var k) ? k : string.Empty;
+
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(ApiKey));
                 OnPropertyChanged(nameof(IsOllamaSelected));
                 OnPropertyChanged(nameof(NeedsApiKey));
                 OnPropertyChanged(nameof(ApiKeyLabel));
@@ -58,7 +71,13 @@ namespace DynamoCopilot.Extension.ViewModels
         public string ApiKey
         {
             get => _apiKey;
-            set { _apiKey = value; OnPropertyChanged(); StatusMessage = string.Empty; }
+            set
+            {
+                _apiKey = value;
+                _workingKeys[_selectedProvider.ToString()] = value;
+                OnPropertyChanged();
+                StatusMessage = string.Empty;
+            }
         }
 
         public string ModelName
@@ -132,8 +151,15 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private System.Threading.Tasks.Task SaveAsync()
         {
+            // Flush all per-provider keys collected this session
+            foreach (var kv in _workingKeys)
+            {
+                if (!string.IsNullOrWhiteSpace(kv.Value))
+                    _settings.ApiKeys[kv.Key] = kv.Value.Trim();
+            }
+
             _settings.AiProvider  = _selectedProvider;
-            _settings.ApiKey      = _apiKey.Trim();
+            _settings.ApiKey      = _apiKey.Trim();   // active provider's key (kept in sync)
             _settings.ModelName   = _modelName.Trim();
             _settings.OllamaUrl   = string.IsNullOrWhiteSpace(_ollamaUrl)
                 ? "http://localhost:11434"
@@ -217,11 +243,19 @@ namespace DynamoCopilot.Extension.ViewModels
         private void LoadFromSettings()
         {
             _selectedProvider = _settings.AiProvider;
-            _apiKey           = _settings.ApiKey   ?? string.Empty;
             _modelName        = _settings.ModelName ?? string.Empty;
             _ollamaUrl        = string.IsNullOrWhiteSpace(_settings.OllamaUrl)
                 ? "http://localhost:11434"
                 : _settings.OllamaUrl;
+
+            // Seed working keys from persisted per-provider keys
+            foreach (var kv in _settings.ApiKeys)
+                _workingKeys[kv.Key] = kv.Value;
+
+            // Active provider's key
+            _apiKey = _workingKeys.TryGetValue(_selectedProvider.ToString(), out var k)
+                ? k
+                : _settings.ApiKey ?? string.Empty;
         }
 
         private void SetBusy(bool busy)

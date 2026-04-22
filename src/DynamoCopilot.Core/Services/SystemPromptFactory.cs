@@ -8,7 +8,7 @@ namespace DynamoCopilot.Core.Services
     /// </summary>
     public static class SystemPromptFactory
     {
-        public static ChatMessage Build(string pythonEngine)
+        public static ChatMessage Build(string pythonEngine, string? ragContext = null)
         {
             bool isCPython = pythonEngine.StartsWith("CPython", System.StringComparison.OrdinalIgnoreCase)
                           || pythonEngine.StartsWith("PythonNet", System.StringComparison.OrdinalIgnoreCase);
@@ -100,6 +100,17 @@ Briefly explain what changed and why (2–3 sentences max), then show the full c
 - Do not explain Dynamo basics unless asked.
 - Do not add unnecessary try/except blocks that hide errors.
 - Do not use `Application.ActiveUIDocument` — always go through `DocumentManager`.";
+
+            if (!string.IsNullOrWhiteSpace(ragContext))
+            {
+                content += $@"
+
+## Relevant Revit API Reference
+The following Revit API types from the installed Revit version may be relevant to this request.
+Use these as reference when generating code — prefer the exact class and member names shown here.
+
+{ragContext.Trim()}";
+            }
 
             return new ChatMessage
             {

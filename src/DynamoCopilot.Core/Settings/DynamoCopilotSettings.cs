@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -41,7 +42,17 @@ namespace DynamoCopilot.Core.Settings
         [JsonPropertyName("aiProvider")]
         public AiProvider AiProvider { get; set; } = AiProvider.OpenAI;
 
-        /// <summary>API key for the selected provider. Never logged or transmitted to our server.</summary>
+        /// <summary>
+        /// Per-provider API keys keyed by provider name string (e.g. "OpenAI", "Gemini").
+        /// Never logged or transmitted to our server.
+        /// </summary>
+        [JsonPropertyName("apiKeys")]
+        public Dictionary<string, string> ApiKeys { get; set; } = new();
+
+        /// <summary>
+        /// Legacy single-key field — kept for JSON round-trip compatibility.
+        /// Prefer <see cref="ApiKeys"/> for reading/writing keys.
+        /// </summary>
         [JsonPropertyName("apiKey")]
         public string ApiKey { get; set; } = string.Empty;
 
@@ -59,6 +70,32 @@ namespace DynamoCopilot.Core.Settings
 
         [JsonPropertyName("maxHistoryMessages")]
         public int MaxHistoryMessages { get; set; } = 40;
+
+        // ── Feature flags ─────────────────────────────────────────────────────
+
+        /// <summary>Enable BM25 RAG context injection from local RevitAPI.xml.</summary>
+        [JsonPropertyName("enableRag")]
+        public bool EnableRag { get; set; } = true;
+
+        /// <summary>Optional override path to the directory containing RevitAPI.xml.</summary>
+        [JsonPropertyName("revitApiXmlPath")]
+        public string RevitApiXmlPath { get; set; } = string.Empty;
+
+        /// <summary>Enable post-generation Revit enum validation + LLM auto-fix.</summary>
+        [JsonPropertyName("enableCodeValidation")]
+        public bool EnableCodeValidation { get; set; } = true;
+
+        /// <summary>Enable spec-first workflow (classify → spec card → code gen).</summary>
+        [JsonPropertyName("enableSpecFirst")]
+        public bool EnableSpecFirst { get; set; } = true;
+
+        // ── Per-provider key helpers ──────────────────────────────────────────
+
+        public string GetApiKey(AiProvider provider) =>
+            ApiKeys.TryGetValue(provider.ToString(), out var key) ? key : string.Empty;
+
+        public void SetApiKey(AiProvider provider, string key) =>
+            ApiKeys[provider.ToString()] = key;
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -85,8 +122,20 @@ namespace DynamoCopilot.Core.Settings
             try
             {
                 var json = File.ReadAllText(SettingsFilePath, Encoding.UTF8);
-                return JsonSerializer.Deserialize<DynamoCopilotSettings>(json)
+                var settings = JsonSerializer.Deserialize<DynamoCopilotSettings>(json)
                     ?? new DynamoCopilotSettings();
+
+                // Migrate legacy single apiKey into the per-provider dict if not already there
+                if (!string.IsNullOrEmpty(settings.ApiKey) &&
+                    !settings.ApiKeys.ContainsKey(settings.AiProvider.ToString()))
+                {
+                    settings.ApiKeys[settings.AiProvider.ToString()] = settings.ApiKey;
+                }
+
+                // Keep ApiKey in sync with the active provider
+                settings.ApiKey = settings.GetApiKey(settings.AiProvider);
+
+                return settings;
             }
             catch
             {

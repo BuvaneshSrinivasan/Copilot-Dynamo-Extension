@@ -309,6 +309,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" Text="Dynamo Co-pilot"
                            FontSize="10" Foreground="{StaticResource AccentBrush}"
@@ -469,7 +470,145 @@
                         </ScrollViewer>
                     </StackPanel>
                 </Border>
+                <!-- Validation warning banner (shown when enum values couldn't be auto-fixed) -->
+                <Border Grid.Row="3"
+                        Background="#3D2800"
+                        BorderBrush="#C97F3A"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="10,7"
+                        Margin="0,6,8,0"
+                        Visibility="{Binding HasValidationWarning, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Validation Warning"
+                                   FontSize="10" FontWeight="SemiBold"
+                                   Foreground="#C97F3A" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding ValidationWarning}"
+                                 IsReadOnly="True"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Foreground="#F4C771"
+                                 FontSize="11"
+                                 TextWrapping="Wrap"
+                                 Padding="0"/>
+                    </StackPanel>
+                </Border>
             </Grid>
+        </DataTemplate>
+
+        <!-- Feature 1: Spec card DataTemplate -->
+        <DataTemplate x:Key="SpecCardTemplate" DataType="{x:Type vm:SpecCardViewModel}">
+            <Border Background="#1A2535"
+                    BorderBrush="{StaticResource AccentBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="14,12"
+                    Margin="0,4,8,0">
+                <StackPanel>
+                    <TextBlock Text="Specification Generated"
+                               FontSize="10" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBrush}"
+                               Margin="0,0,0,8"/>
+
+                    <!-- Steps summary -->
+                    <TextBlock Text="Steps:" FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,0,0,3"/>
+                    <TextBox Text="{Binding StepsSummary}"
+                             IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                             Foreground="{StaticResource TextBrush}" FontSize="12"
+                             TextWrapping="Wrap" Padding="0" Margin="0,0,0,8"/>
+
+                    <!-- Output -->
+                    <TextBlock Text="Output:" FontSize="11" FontWeight="SemiBold"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,0,0,3"/>
+                    <TextBlock Text="{Binding OutputSummary}" FontSize="12"
+                               Foreground="{StaticResource TextBrush}" TextWrapping="Wrap"
+                               Margin="0,0,0,12"/>
+
+                    <!-- Clarifying questions (optional) -->
+                    <StackPanel Visibility="{Binding HasQuestions, Converter={StaticResource BoolToVis}}"
+                                Margin="0,0,0,12">
+                        <TextBlock Text="Please clarify:" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6"/>
+                        <ItemsControl ItemsSource="{Binding Questions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,10">
+                                        <TextBlock Text="{Binding Question}" FontSize="12"
+                                                   Foreground="{StaticResource TextBrush}"
+                                                   TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                        <TextBox Text="{Binding Answer, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 FontSize="12" Padding="6,4"
+                                                 Background="#252526" Foreground="{StaticResource TextBrush}"
+                                                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Action buttons -->
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Generate Code"
+                                Command="{Binding ConfirmCommand}"
+                                Padding="12,6" Margin="0,0,8,0" Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                                    <Setter Property="Foreground" Value="#000000"/>
+                                    <Setter Property="FontSize" Value="12"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#4EB0FF"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button Content="Cancel"
+                                Command="{Binding CancelCommand}"
+                                Padding="12,6" Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#3A3A3A"/>
+                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                    <Setter Property="FontSize" Value="12"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#4A4A4A"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </DataTemplate>
 
         <DataTemplate x:Key="MessageTemplate" DataType="{x:Type vm:ChatMessageViewModel}">
@@ -480,6 +619,11 @@
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsUser}" Value="True">
                                 <Setter Property="ContentTemplate" Value="{StaticResource UserMessageTemplate}"/>
+                            </DataTrigger>
+                            <!-- Feature 1: route spec cards to SpecCardTemplate -->
+                            <DataTrigger Binding="{Binding IsSpecCard}" Value="True">
+                                <Setter Property="Content"         Value="{Binding SpecCard}"/>
+                                <Setter Property="ContentTemplate" Value="{StaticResource SpecCardTemplate}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

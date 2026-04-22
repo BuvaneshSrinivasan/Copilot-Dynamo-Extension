@@ -11,6 +11,8 @@ using Dynamo.Wpf.Extensions;
 using DynamoCopilot.Core.Models;
 using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Services.Providers;
+using DynamoCopilot.Core.Services.Rag;
+using DynamoCopilot.Core.Services.Validation;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.Extension.Services;
 using DynamoCopilot.GraphInterop;
@@ -22,6 +24,7 @@ namespace DynamoCopilot.Extension.ViewModels
     // ─────────────────────────────────────────────────────────────────────────────
 
     public enum PanelMode { Chat, NodeSuggest }
+    public enum ChatMessageType { Normal, SpecCard }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Per-message view model (unchanged)
@@ -56,6 +59,19 @@ namespace DynamoCopilot.Extension.ViewModels
         public bool HasCode  => !string.IsNullOrWhiteSpace(_codeSnippet);
         public bool IsUser   => Role == ChatRole.User;
 
+        // Feature 1: spec card support
+        public ChatMessageType MessageType { get; set; } = ChatMessageType.Normal;
+        public SpecCardViewModel? SpecCard  { get; set; }
+        public bool IsSpecCard => MessageType == ChatMessageType.SpecCard;
+
+        private string? _validationWarning;
+        public string? ValidationWarning
+        {
+            get => _validationWarning;
+            set { _validationWarning = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasValidationWarning)); }
+        }
+        public bool HasValidationWarning => !string.IsNullOrWhiteSpace(_validationWarning);
+
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? n = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
@@ -75,6 +91,10 @@ namespace DynamoCopilot.Extension.ViewModels
         private readonly ViewLoadedParams        _dynParams;
         private readonly PackageStateService     _packageState;
         private readonly DynamoPackageDownloader _downloader;
+        private readonly RevitApiRagService       _ragService;
+        private          SpecGeneratorService    _specGenerator;
+        private readonly SpecificationStateManager _specState;
+        private bool     _isClassifying;
 
         private ChatSession _currentSession;
         private CancellationTokenSource? _streamingCts;
@@ -327,7 +347,11 @@ namespace DynamoCopilot.Extension.ViewModels
             _packageState       = packageState;
             _downloader         = downloader;
 
-            _llmService = LlmServiceFactory.Create(settings);
+            _llmService     = LlmServiceFactory.Create(settings);
+            _ragService     = new RevitApiRagService(
+                string.IsNullOrWhiteSpace(settings.RevitApiXmlPath) ? null : settings.RevitApiXmlPath);
+            _specGenerator  = new SpecGeneratorService(_llmService);
+            _specState      = new SpecificationStateManager();
 
             SettingsVm = new SettingsPanelViewModel(settings);
             SettingsVm.SettingsSaved += OnSettingsSaved;
@@ -338,9 +362,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private void OnSettingsSaved(object? sender, EventArgs e)
         {
-            // Rebuild the LLM service whenever the user saves new provider settings
             (_llmService as IDisposable)?.Dispose();
-            _llmService = LlmServiceFactory.Create(_settings);
+            _llmService    = LlmServiceFactory.Create(_settings);
+            _specGenerator = new SpecGeneratorService(_llmService);
         }
 
         // ── Startup auth check ────────────────────────────────────────────────────
@@ -479,6 +503,27 @@ namespace DynamoCopilot.Extension.ViewModels
         public async Task SendMessageAsync(string userText)
         {
             if (string.IsNullOrWhiteSpace(userText) || IsStreaming) return;
+            try
+            {
+                await SendMessageCoreAsync(userText);
+            }
+            catch (Exception ex)
+            {
+                CopilotLogger.Log("SendMessageAsync unhandled", ex);
+                IsStreaming    = false;
+                StatusMessage  = "An unexpected error occurred. See %TEMP%\\DynamoCopilot.log for details.";
+            }
+        }
+
+        private async Task SendMessageCoreAsync(string userText)
+        {
+            // Feature 1: !direct prefix bypasses spec classification
+            bool bypassSpec = userText.StartsWith("!direct ", StringComparison.Ordinal);
+            if (bypassSpec) userText = userText.Substring("!direct ".Length).Trim();
+
+            // Cancel any pending spec if the user starts a new message
+            if (_specState.HasPendingSpec && !bypassSpec)
+                CancelPendingSpec();
 
             _streamingCts?.Cancel();
             _streamingCts = new CancellationTokenSource();
@@ -488,9 +533,139 @@ namespace DynamoCopilot.Extension.ViewModels
             _currentSession.PythonEngine = engineName;
 
             _currentSession.Messages.Add(new ChatMessage { Role = ChatRole.User, Content = userText });
-            var userVm = new ChatMessageViewModel { Role = ChatRole.User, Content = userText };
-            AddMessage(userVm);
+            AddMessage(new ChatMessageViewModel { Role = ChatRole.User, Content = userText });
 
+            // Feature 1: spec-first classification (unless bypassed or disabled)
+            if (!bypassSpec && _settings.EnableSpecFirst)
+            {
+                _isClassifying = true;
+                StatusMessage  = "Analyzing your request...";
+                SpecClassificationResult classification;
+                try
+                {
+                    var historyForClassifier = GetRecentHistoryForClassifier();
+                    classification = await _specGenerator.ClassifyAsync(userText, historyForClassifier, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    _isClassifying = false;
+                    StatusMessage  = string.Empty;
+                    IsStreaming    = false;
+                    return;
+                }
+                catch
+                {
+                    classification = new SpecClassificationResult { IsSpec = false };
+                }
+                _isClassifying = false;
+                StatusMessage  = string.Empty;
+
+                if (classification.IsSpec && classification.Spec != null)
+                {
+                    ShowSpecCard(classification.Spec);
+                    return;
+                }
+
+                // Chat response from classifier — show it directly without another LLM call
+                if (!string.IsNullOrWhiteSpace(classification.ChatText))
+                {
+                    var chatVm = new ChatMessageViewModel
+                    {
+                        Role    = ChatRole.Assistant,
+                        Content = classification.ChatText
+                    };
+                    AddMessage(chatVm);
+                    _currentSession.Messages.Add(new ChatMessage
+                    {
+                        Role    = ChatRole.Assistant,
+                        Content = classification.ChatText
+                    });
+                    _historyService.Save(_currentSession);
+                    return;
+                }
+            }
+
+            await RunStreamingAsync(userText, engineName, ct);
+        }
+
+        private void ShowSpecCard(CodeSpecification spec)
+        {
+            _specState.SetPending(spec);
+            var cardVm = new SpecCardViewModel(
+                spec,
+                onConfirm: s => ConfirmSpecAsync(s),
+                onCancel:  CancelPendingSpec);
+
+            var msgVm = new ChatMessageViewModel
+            {
+                Role        = ChatRole.Assistant,
+                MessageType = ChatMessageType.SpecCard,
+                SpecCard    = cardVm
+            };
+            AddMessage(msgVm);
+        }
+
+        private async Task ConfirmSpecAsync(CodeSpecification spec)
+        {
+            _specState.Clear();
+
+            // Build a code-generation request from the confirmed spec
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Generate complete Python code for the following specification:");
+            sb.AppendLine();
+            if (spec.Inputs.Count > 0)
+            {
+                sb.AppendLine("**Inputs:**");
+                foreach (var inp in spec.Inputs)
+                    sb.AppendLine($"- {inp.Name} ({inp.Type}): {inp.Description}");
+                sb.AppendLine();
+            }
+            sb.AppendLine("**Processing steps:**");
+            foreach (var step in spec.Steps)
+                sb.AppendLine($"- {step}");
+            sb.AppendLine();
+            if (spec.Output != null)
+                sb.AppendLine($"**Output:** {spec.Output.Type} — {spec.Output.Description}");
+
+            // Include answered clarifying questions if any
+            bool hasAnswers = false;
+            foreach (var q in spec.Questions)
+                if (!string.IsNullOrWhiteSpace(q.Answer)) { hasAnswers = true; break; }
+            if (hasAnswers)
+            {
+                sb.AppendLine();
+                sb.AppendLine("**Clarifications:**");
+                foreach (var q in spec.Questions)
+                    if (!string.IsNullOrWhiteSpace(q.Answer))
+                        sb.AppendLine($"- {q.Question} → {q.Answer}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Return the complete, runnable Python script.");
+
+            _streamingCts?.Cancel();
+            _streamingCts = new CancellationTokenSource();
+            var engineName  = DetectPythonEngine();
+            var codeRequest = sb.ToString();
+
+            // Add this synthetic request to history so the LLM has context
+            _currentSession.Messages.Add(new ChatMessage
+            {
+                Role    = ChatRole.User,
+                Content = codeRequest
+            });
+
+            await RunStreamingAsync(codeRequest, engineName, _streamingCts.Token);
+        }
+
+        private void CancelPendingSpec()
+        {
+            _specState.Clear();
+            ShowStatus("Specification cancelled.");
+        }
+
+        private async Task RunStreamingAsync(string userText, string engineName, CancellationToken ct)
+        {
             var assistantVm = new ChatMessageViewModel
             {
                 Role = ChatRole.Assistant, Content = string.Empty, IsStreaming = true
@@ -500,9 +675,17 @@ namespace DynamoCopilot.Extension.ViewModels
 
             var contentBuilder = new StringBuilder();
 
+            // Feature 3: fetch RAG context from local RevitAPI.xml
+            string? ragContext = null;
+            if (_settings.EnableRag)
+            {
+                try { ragContext = await _ragService.FetchContextAsync(userText, ct); }
+                catch { /* fail open */ }
+            }
+
             try
             {
-                var messages = BuildMessageList(engineName);
+                var messages = BuildMessageList(engineName, ragContext);
                 await foreach (var token in _llmService.SendStreamingAsync(messages, ct))
                 {
                     contentBuilder.Append(token);
@@ -536,6 +719,26 @@ namespace DynamoCopilot.Extension.ViewModels
             var fullContent = contentBuilder.ToString();
             var codeSnippet = ExtractFirstCodeBlock(fullContent);
 
+            // Feature 2: validate + auto-fix Revit enum values in generated code
+            if (codeSnippet != null && _settings.EnableCodeValidation)
+            {
+                var validation = RevitEnumValidator.Instance.Validate(codeSnippet);
+                if (!validation.IsValid)
+                {
+                    string? fixedCode = await RunAutoFixLoopAsync(codeSnippet, validation, ct)
+                                             .ConfigureAwait(false);
+                    if (fixedCode != null)
+                    {
+                        fullContent = fullContent.Replace(codeSnippet, fixedCode);
+                        codeSnippet = fixedCode;
+                    }
+                    else
+                    {
+                        assistantVm.ValidationWarning = FormatValidationWarning(validation);
+                    }
+                }
+            }
+
             assistantVm.Content     = StripCodeBlock(fullContent);
             assistantVm.CodeSnippet = codeSnippet;
             assistantVm.IsStreaming = false;
@@ -546,6 +749,57 @@ namespace DynamoCopilot.Extension.ViewModels
                 Role = ChatRole.Assistant, Content = fullContent, CodeSnippet = codeSnippet
             });
             _historyService.Save(_currentSession);
+        }
+
+        private async Task<string?> RunAutoFixLoopAsync(
+            string code,
+            ValidationResult result,
+            CancellationToken ct)
+        {
+            const int MaxAttempts = 2;
+            string currentCode   = code;
+            var    currentResult = result;
+
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                if (ct.IsCancellationRequested) return null;
+
+                var fixPrompt = AutoFixRequestBuilder.Build(currentCode, currentResult, attempt);
+                var fixMessages = new List<ChatMessage>
+                {
+                    SystemPromptFactory.Build(DetectPythonEngine()),
+                    new ChatMessage { Role = ChatRole.User, Content = fixPrompt }
+                };
+
+                var sb = new StringBuilder();
+                try
+                {
+                    await foreach (var token in _llmService.SendStreamingAsync(fixMessages, ct))
+                        sb.Append(token);
+                }
+                catch { return null; }
+
+                var fixedCode = ExtractFirstCodeBlock(sb.ToString());
+                if (fixedCode == null) return null;
+
+                var revalidation = RevitEnumValidator.Instance.Validate(fixedCode);
+                if (revalidation.IsValid) return fixedCode;
+
+                currentCode   = fixedCode;
+                currentResult = revalidation;
+            }
+
+            return null;
+        }
+
+        private static string FormatValidationWarning(ValidationResult result)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Code Validation: the following Revit API enum values may not exist in this installation:");
+            foreach (var issue in result.Issues)
+                sb.AppendLine($"  - {issue.Category}.{issue.InvalidValue}");
+            sb.Append("Verify these values before running the script.");
+            return sb.ToString();
         }
 
         public void InsertCode(string code)
@@ -849,10 +1103,10 @@ namespace DynamoCopilot.Extension.ViewModels
             timer.Start();
         }
 
-        private List<ChatMessage> BuildMessageList(string engineName)
+        private List<ChatMessage> BuildMessageList(string engineName, string? ragContext = null)
         {
             var result = new List<ChatMessage>();
-            result.Add(SystemPromptFactory.Build(engineName));
+            result.Add(SystemPromptFactory.Build(engineName, ragContext));
             var msgs  = _currentSession.Messages;
             int start = Math.Max(0, msgs.Count - _settings.MaxHistoryMessages);
             for (int i = start; i < msgs.Count; i++)
@@ -873,6 +1127,19 @@ namespace DynamoCopilot.Extension.ViewModels
                     return (msgs[i].CodeSnippet, i);
             }
             return (null, -1);
+        }
+
+        /// <summary>
+        /// Returns the most recent non-system messages from the current session for use as
+        /// classifier context. The SpecGeneratorService itself limits to the last N turns.
+        /// </summary>
+        private IList<ChatMessage> GetRecentHistoryForClassifier()
+        {
+            var msgs   = _currentSession.Messages;
+            var result = new List<ChatMessage>(msgs.Count);
+            foreach (var m in msgs)
+                if (m.Role != ChatRole.System) result.Add(m);
+            return result;
         }
 
         /// <summary>
