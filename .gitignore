@@ -46,3 +46,6 @@ $RECYCLE.BIN/
 
 # Database — seed.sql is intentionally tracked; add below to ignore large dumps locally
 # db/seed.sql
+
+assets/nodes.db
+assets/*.db

@@ -14,10 +14,8 @@ namespace DynamoCopilot.Core.Services
     {
         public static ILlmService Create(DynamoCopilotSettings settings)
         {
-            var key   = settings.ApiKey   ?? string.Empty;
-            var model = string.IsNullOrWhiteSpace(settings.ModelName)
-                ? DynamoCopilotSettings.DefaultModelFor(settings.AiProvider)
-                : settings.ModelName;
+            var key   = settings.GetApiKey(settings.AiProvider);
+            var model = settings.GetModel(settings.AiProvider);
 
             return settings.AiProvider switch
             {
@@ -25,7 +23,7 @@ namespace DynamoCopilot.Core.Services
                 AiProvider.Gemini   => new GeminiLlmService(key, model),
                 AiProvider.Claude   => new ClaudeLlmService(key, model),
                 AiProvider.DeepSeek => new DeepSeekLlmService(key, model),
-                AiProvider.Ollama   => new OllamaLlmService(model, settings.OllamaUrl),
+                AiProvider.Ollama   => new OllamaLlmService(model, settings.Ollama.Url),
                 _                   => throw new NotSupportedException(
                                            $"Unknown provider: {settings.AiProvider}")
             };

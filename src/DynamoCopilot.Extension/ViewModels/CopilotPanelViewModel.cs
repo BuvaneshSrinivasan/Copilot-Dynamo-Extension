@@ -11,6 +11,8 @@ using Dynamo.Wpf.Extensions;
 using DynamoCopilot.Core.Models;
 using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Services.Providers;
+using DynamoCopilot.Core.Services.Rag;
+using DynamoCopilot.Core.Services.Validation;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.Extension.Services;
 using DynamoCopilot.GraphInterop;
@@ -22,6 +24,7 @@ namespace DynamoCopilot.Extension.ViewModels
     // ─────────────────────────────────────────────────────────────────────────────
 
     public enum PanelMode { Chat, NodeSuggest }
+    public enum ChatMessageType { Normal, SpecCard }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Per-message view model (unchanged)
@@ -56,6 +59,19 @@ namespace DynamoCopilot.Extension.ViewModels
         public bool HasCode  => !string.IsNullOrWhiteSpace(_codeSnippet);
         public bool IsUser   => Role == ChatRole.User;
 
+        // Feature 1: spec card support
+        public ChatMessageType MessageType { get; set; } = ChatMessageType.Normal;
+        public SpecCardViewModel? SpecCard  { get; set; }
+        public bool IsSpecCard => MessageType == ChatMessageType.SpecCard;
+
+        private string? _validationWarning;
+        public string? ValidationWarning
+        {
+            get => _validationWarning;
+            set { _validationWarning = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasValidationWarning)); }
+        }
+        public bool HasValidationWarning => !string.IsNullOrWhiteSpace(_validationWarning);
+
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? n = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
@@ -75,26 +91,44 @@ namespace DynamoCopilot.Extension.ViewModels
         private readonly ViewLoadedParams        _dynParams;
         private readonly PackageStateService     _packageState;
         private readonly DynamoPackageDownloader _downloader;
+        private readonly RevitApiRagService       _ragService;
+        private          SpecGeneratorService    _specGenerator;
+        private readonly SpecificationStateManager _specState;
+        private bool     _isClassifying;
 
         private ChatSession _currentSession;
         private CancellationTokenSource? _streamingCts;
 
         // ── Settings panel ────────────────────────────────────────────────────────
 
-        private bool _showSettings;
+        private bool _showAiPanel;
+        private bool _showUserPanel;
 
         public SettingsPanelViewModel SettingsVm { get; }
 
-        public bool ShowSettings
+        public bool ShowAiPanel
         {
-            get => _showSettings;
-            private set { _showSettings = value; OnPropertyChanged(); }
+            get => _showAiPanel;
+            private set { _showAiPanel = value; OnPropertyChanged(); }
         }
 
-        public void ToggleSettings()
+        public bool ShowUserPanel
         {
-            ShowSettings = !ShowSettings;
-            if (ShowSettings)
+            get => _showUserPanel;
+            private set { _showUserPanel = value; OnPropertyChanged(); }
+        }
+
+        public void ToggleAiPanel()
+        {
+            ShowAiPanel   = !ShowAiPanel;
+            ShowUserPanel = false;
+        }
+
+        public void ToggleUserPanel()
+        {
+            ShowUserPanel = !ShowUserPanel;
+            ShowAiPanel   = false;
+            if (ShowUserPanel)
                 _ = RefreshUserInfoAsync();
         }
 
@@ -111,13 +145,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── User info ─────────────────────────────────────────────────────────────
 
-        private bool   _showUserInfo;
         private string _userEmail       = string.Empty;
         private bool   _isLicenceActive = true;
-        private int    _requestsUsed;
-        private int    _requestLimit    = 30;
         private int    _tokensUsed;
-        private int    _tokenLimit      = 40000;
 
         // ── Panel mode ────────────────────────────────────────────────────────────
 
@@ -210,12 +240,6 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── User info bindings ────────────────────────────────────────────────────
 
-        public bool ShowUserInfo
-        {
-            get => _showUserInfo;
-            private set { _showUserInfo = value; OnPropertyChanged(); }
-        }
-
         public string UserEmail
         {
             get => _userEmail;
@@ -228,33 +252,13 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _isLicenceActive = value; OnPropertyChanged(); }
         }
 
-        public int RequestsUsed
-        {
-            get => _requestsUsed;
-            private set { _requestsUsed = value; OnPropertyChanged(); OnPropertyChanged(nameof(RequestsDisplay)); }
-        }
-
-        public int RequestLimit
-        {
-            get => _requestLimit;
-            private set { _requestLimit = value; OnPropertyChanged(); OnPropertyChanged(nameof(RequestsDisplay)); }
-        }
-
-        public string RequestsDisplay => $"{_requestsUsed} / {_requestLimit}";
-
         public int TokensUsed
         {
             get => _tokensUsed;
             private set { _tokensUsed = value; OnPropertyChanged(); OnPropertyChanged(nameof(TokensDisplay)); }
         }
 
-        public int TokenLimit
-        {
-            get => _tokenLimit;
-            private set { _tokenLimit = value; OnPropertyChanged(); OnPropertyChanged(nameof(TokensDisplay)); }
-        }
-
-        public string TokensDisplay => $"{_tokensUsed:N0} / {_tokenLimit:N0}";
+        public string TokensDisplay => $"{_tokensUsed:N0}";
 
         // ── Chat bindings ─────────────────────────────────────────────────────────
 
@@ -327,7 +331,11 @@ namespace DynamoCopilot.Extension.ViewModels
             _packageState       = packageState;
             _downloader         = downloader;
 
-            _llmService = LlmServiceFactory.Create(settings);
+            _llmService     = LlmServiceFactory.Create(settings);
+            _ragService     = new RevitApiRagService(
+                string.IsNullOrWhiteSpace(settings.RevitApiXmlPath) ? null : settings.RevitApiXmlPath);
+            _specGenerator  = new SpecGeneratorService(_llmService);
+            _specState      = new SpecificationStateManager();
 
             SettingsVm = new SettingsPanelViewModel(settings);
             SettingsVm.SettingsSaved += OnSettingsSaved;
@@ -338,9 +346,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private void OnSettingsSaved(object? sender, EventArgs e)
         {
-            // Rebuild the LLM service whenever the user saves new provider settings
             (_llmService as IDisposable)?.Dispose();
-            _llmService = LlmServiceFactory.Create(_settings);
+            _llmService    = LlmServiceFactory.Create(_settings);
+            _specGenerator = new SpecGeneratorService(_llmService);
         }
 
         // ── Startup auth check ────────────────────────────────────────────────────
@@ -444,7 +452,8 @@ namespace DynamoCopilot.Extension.ViewModels
             NodeSuggestions.Clear();
             ShowWelcome      = true;
             StatusMessage    = string.Empty;
-            ShowUserInfo     = false;
+            ShowAiPanel      = false;
+            ShowUserPanel    = false;
             IsLoggedIn       = false;
             IsRegisterMode   = false;
             AuthError        = string.Empty;
@@ -458,7 +467,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── User info (integrated into settings panel) ────────────────────────────
 
-        public void ToggleUserInfo() => ToggleSettings();
+        public void ToggleUserInfo() => ToggleUserPanel();
 
         private async Task RefreshUserInfoAsync()
         {
@@ -468,10 +477,8 @@ namespace DynamoCopilot.Extension.ViewModels
             if (info == null) return;
 
             UserEmail    = info.Email;
-            RequestsUsed = info.DailyRequestCount;
-            RequestLimit = info.EffectiveRequestLimit;
             TokensUsed   = info.DailyTokenCount;
-            TokenLimit   = info.EffectiveTokenLimit;
+            IsLicenceActive = info.IsActive;
         }
 
         // ── Chat actions ──────────────────────────────────────────────────────────
@@ -479,17 +486,206 @@ namespace DynamoCopilot.Extension.ViewModels
         public async Task SendMessageAsync(string userText)
         {
             if (string.IsNullOrWhiteSpace(userText) || IsStreaming) return;
+            CopilotLogger.Log("SendMessageAsync", $"user={_authService.Email}  text={Truncate(userText, 120)}");
+            try
+            {
+                await SendMessageCoreAsync(userText);
+            }
+            catch (Exception ex)
+            {
+                CopilotLogger.Log("SendMessageAsync unhandled", ex);
+                IsStreaming    = false;
+                StatusMessage  = "An unexpected error occurred. See AppData\\DynamoCopilot\\log for details.";
+            }
+        }
+
+        /// <summary>
+        /// Called by the DispatcherUnhandledException handler when a WPF rendering
+        /// exception originating from our code is caught. Resets streaming state so
+        /// the user can retry.
+        /// </summary>
+        public void HandleRenderException(Exception ex)
+        {
+            IsStreaming = false;
+            _isClassifying = false;
+            StatusMessage  = "A rendering error occurred. See AppData\\DynamoCopilot\\log for details.";
+            CopilotLogger.Log("HandleRenderException", ex.Message);
+        }
+
+        private async Task SendMessageCoreAsync(string userText)
+        {
+            // Feature 1: !direct prefix bypasses spec classification
+            bool bypassSpec = userText.StartsWith("!direct ", StringComparison.Ordinal);
+            if (bypassSpec) userText = userText.Substring("!direct ".Length).Trim();
+
+            // Cancel any pending spec if the user starts a new message
+            if (_specState.HasPendingSpec && !bypassSpec)
+                CancelPendingSpec();
 
             _streamingCts?.Cancel();
             _streamingCts = new CancellationTokenSource();
             var ct = _streamingCts.Token;
 
+            // Block further sends for the entire request lifecycle (classification + response)
+            IsStreaming = true;
+
             var engineName = DetectPythonEngine();
             _currentSession.PythonEngine = engineName;
 
             _currentSession.Messages.Add(new ChatMessage { Role = ChatRole.User, Content = userText });
-            var userVm = new ChatMessageViewModel { Role = ChatRole.User, Content = userText };
-            AddMessage(userVm);
+            AddMessage(new ChatMessageViewModel { Role = ChatRole.User, Content = userText });
+
+            // Feature 1: spec-first classification (unless bypassed or disabled)
+            if (!bypassSpec && _settings.EnableSpecFirst)
+            {
+                CopilotLogger.Log("Classify", "starting");
+                _isClassifying = true;
+                StatusMessage  = "Analyzing your request...";
+                SpecClassificationResult classification;
+                try
+                {
+                    var historyForClassifier = GetRecentHistoryForClassifier();
+                    CopilotLogger.Log("Classify", $"historyMessages={historyForClassifier.Count}");
+                    classification = await _specGenerator.ClassifyAsync(userText, historyForClassifier, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    CopilotLogger.Log("Classify", "cancelled");
+                    _isClassifying = false;
+                    StatusMessage  = string.Empty;
+                    IsStreaming    = false;
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    CopilotLogger.Log("Classify failed — falling back to direct chat", ex);
+                    classification = new SpecClassificationResult { IsSpec = false };
+                }
+                _isClassifying = false;
+                StatusMessage  = string.Empty;
+
+                CopilotLogger.Log("Classify", $"isSpec={classification.IsSpec}  hasChatText={!string.IsNullOrEmpty(classification.ChatText)}");
+
+                if (classification.IsSpec && classification.Spec != null)
+                {
+                    CopilotLogger.Log("Classify", $"spec steps={classification.Spec.Steps.Count}  questions={classification.Spec.Questions.Count}");
+                    IsStreaming = false;
+                    ShowSpecCard(classification.Spec);
+                    return;
+                }
+
+                // Chat response from classifier — show it directly without another LLM call
+                if (!string.IsNullOrWhiteSpace(classification.ChatText))
+                {
+                    CopilotLogger.Log("Classify", "returning classifier chat response");
+                    var chatVm = new ChatMessageViewModel
+                    {
+                        Role    = ChatRole.Assistant,
+                        Content = classification.ChatText
+                    };
+                    AddMessage(chatVm);
+                    _currentSession.Messages.Add(new ChatMessage
+                    {
+                        Role    = ChatRole.Assistant,
+                        Content = classification.ChatText
+                    });
+                    try { _historyService.Save(_currentSession); } catch { }
+                    IsStreaming = false;
+                    return;
+                }
+            }
+
+            CopilotLogger.Log("Classify", "bypassed or disabled — going to streaming");
+            await RunStreamingAsync(userText, engineName, ct);
+        }
+
+        private void ShowSpecCard(CodeSpecification spec)
+        {
+            CopilotLogger.Log("ShowSpecCard", "SetPending");
+            _specState.SetPending(spec);
+
+            CopilotLogger.Log("ShowSpecCard", "creating SpecCardViewModel");
+            var cardVm = new SpecCardViewModel(
+                spec,
+                onConfirm: s => ConfirmSpecAsync(s),
+                onCancel:  CancelPendingSpec);
+
+            CopilotLogger.Log("ShowSpecCard", "creating ChatMessageViewModel");
+            var msgVm = new ChatMessageViewModel
+            {
+                Role        = ChatRole.Assistant,
+                MessageType = ChatMessageType.SpecCard,
+                SpecCard    = cardVm
+            };
+
+            CopilotLogger.Log("ShowSpecCard", "AddMessage");
+            AddMessage(msgVm);
+            CopilotLogger.Log("ShowSpecCard", "done");
+        }
+
+        private async Task ConfirmSpecAsync(CodeSpecification spec)
+        {
+            CopilotLogger.Log("ConfirmSpec", $"steps={spec.Steps.Count}  questions={spec.Questions.Count}");
+            _specState.Clear();
+
+            // Build a code-generation request from the confirmed spec
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Generate complete Python code for the following specification:");
+            sb.AppendLine();
+            if (spec.Inputs.Count > 0)
+            {
+                sb.AppendLine("**Inputs:**");
+                foreach (var inp in spec.Inputs)
+                    sb.AppendLine($"- {inp.Name} ({inp.Type}): {inp.Description}");
+                sb.AppendLine();
+            }
+            sb.AppendLine("**Processing steps:**");
+            foreach (var step in spec.Steps)
+                sb.AppendLine($"- {step}");
+            sb.AppendLine();
+            if (spec.Output != null)
+                sb.AppendLine($"**Output:** {spec.Output.Type} — {spec.Output.Description}");
+
+            // Include answered clarifying questions if any
+            bool hasAnswers = false;
+            foreach (var q in spec.Questions)
+                if (!string.IsNullOrWhiteSpace(q.Answer)) { hasAnswers = true; break; }
+            if (hasAnswers)
+            {
+                sb.AppendLine();
+                sb.AppendLine("**Clarifications:**");
+                foreach (var q in spec.Questions)
+                    if (!string.IsNullOrWhiteSpace(q.Answer))
+                        sb.AppendLine($"- {q.Question} → {q.Answer}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Return the complete, runnable Python script.");
+
+            _streamingCts?.Cancel();
+            _streamingCts = new CancellationTokenSource();
+            var engineName  = DetectPythonEngine();
+            var codeRequest = sb.ToString();
+
+            // Add this synthetic request to history so the LLM has context
+            _currentSession.Messages.Add(new ChatMessage
+            {
+                Role    = ChatRole.User,
+                Content = codeRequest
+            });
+
+            await RunStreamingAsync(codeRequest, engineName, _streamingCts.Token);
+        }
+
+        private void CancelPendingSpec()
+        {
+            _specState.Clear();
+            ShowStatus("Specification cancelled.");
+        }
+
+        private async Task RunStreamingAsync(string userText, string engineName, CancellationToken ct)
+        {
+            CopilotLogger.Log("Streaming", $"engine={engineName}  provider={_settings.AiProvider}  model={_settings.GetModel(_settings.AiProvider)}");
 
             var assistantVm = new ChatMessageViewModel
             {
@@ -499,12 +695,29 @@ namespace DynamoCopilot.Extension.ViewModels
             IsStreaming = true;
 
             var contentBuilder = new StringBuilder();
+            int tokenCount = 0;
+
+            // Feature 3: fetch RAG context from local RevitAPI.xml
+            string? ragContext = null;
+            if (_settings.EnableRag)
+            {
+                try
+                {
+                    ragContext = await _ragService.FetchContextAsync(userText, ct);
+                    CopilotLogger.Log("Streaming", $"RAG context chars={ragContext?.Length ?? 0}");
+                }
+                catch (Exception ex) { CopilotLogger.Log("RAG fetch failed (non-fatal)", ex); }
+            }
 
             try
             {
-                var messages = BuildMessageList(engineName);
+                var messages = BuildMessageList(engineName, ragContext);
+                CopilotLogger.Log("Streaming", $"sending {messages.Count} messages to LLM");
+                bool firstToken = true;
                 await foreach (var token in _llmService.SendStreamingAsync(messages, ct))
                 {
+                    if (firstToken) { CopilotLogger.Log("Streaming", "first token received"); firstToken = false; }
+                    tokenCount++;
                     contentBuilder.Append(token);
                     assistantVm.Content = contentBuilder.ToString();
                     RequestScrollToBottom?.Invoke();
@@ -512,6 +725,7 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             catch (OperationCanceledException)
             {
+                CopilotLogger.Log("Streaming", "cancelled by user");
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 return;
@@ -520,6 +734,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 ex.Message.Contains("Session expired") ||
                 ex.Message.Contains("log in"))
             {
+                CopilotLogger.Log("Streaming session expired", ex);
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 Logout();
@@ -527,25 +742,102 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             catch (Exception ex)
             {
+                CopilotLogger.Log("Streaming LLM error", ex);
                 assistantVm.Content     = $"Error: {ex.Message}";
                 assistantVm.IsStreaming = false;
                 IsStreaming = false;
                 return;
             }
 
+            CopilotLogger.Log("Streaming", $"complete  tokens={tokenCount}  chars={contentBuilder.Length}");
+
             var fullContent = contentBuilder.ToString();
             var codeSnippet = ExtractFirstCodeBlock(fullContent);
+            CopilotLogger.Log("Streaming", $"codeBlock={codeSnippet != null}  codeChars={codeSnippet?.Length ?? 0}");
+
+            // Feature 2: validate + auto-fix Revit enum values in generated code
+            if (codeSnippet != null && _settings.EnableCodeValidation)
+            {
+                var validation = RevitEnumValidator.Instance.Validate(codeSnippet);
+                CopilotLogger.Log("Validation", $"isValid={validation.IsValid}  issues={validation.Issues.Count}");
+                if (!validation.IsValid)
+                {
+                    string? fixedCode = await RunAutoFixLoopAsync(codeSnippet, validation, ct);
+                    CopilotLogger.Log("Validation", $"autoFix={fixedCode != null}");
+                    if (fixedCode != null)
+                    {
+                        fullContent = fullContent.Replace(codeSnippet, fixedCode);
+                        codeSnippet = fixedCode;
+                    }
+                    else
+                    {
+                        assistantVm.ValidationWarning = FormatValidationWarning(validation);
+                    }
+                }
+            }
 
             assistantVm.Content     = StripCodeBlock(fullContent);
             assistantVm.CodeSnippet = codeSnippet;
             assistantVm.IsStreaming = false;
             IsStreaming = false;
+            CopilotLogger.Log("Streaming", "UI updated — done");
 
             _currentSession.Messages.Add(new ChatMessage
             {
                 Role = ChatRole.Assistant, Content = fullContent, CodeSnippet = codeSnippet
             });
-            _historyService.Save(_currentSession);
+            try { _historyService.Save(_currentSession); } catch { }
+        }
+
+        private async Task<string?> RunAutoFixLoopAsync(
+            string code,
+            ValidationResult result,
+            CancellationToken ct)
+        {
+            const int MaxAttempts = 2;
+            string currentCode   = code;
+            var    currentResult = result;
+
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                if (ct.IsCancellationRequested) return null;
+
+                var fixPrompt = AutoFixRequestBuilder.Build(currentCode, currentResult, attempt);
+                var fixMessages = new List<ChatMessage>
+                {
+                    SystemPromptFactory.Build(DetectPythonEngine()),
+                    new ChatMessage { Role = ChatRole.User, Content = fixPrompt }
+                };
+
+                var sb = new StringBuilder();
+                try
+                {
+                    await foreach (var token in _llmService.SendStreamingAsync(fixMessages, ct))
+                        sb.Append(token);
+                }
+                catch { return null; }
+
+                var fixedCode = ExtractFirstCodeBlock(sb.ToString());
+                if (fixedCode == null) return null;
+
+                var revalidation = RevitEnumValidator.Instance.Validate(fixedCode);
+                if (revalidation.IsValid) return fixedCode;
+
+                currentCode   = fixedCode;
+                currentResult = revalidation;
+            }
+
+            return null;
+        }
+
+        private static string FormatValidationWarning(ValidationResult result)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Code Validation: the following Revit API enum values may not exist in this installation:");
+            foreach (var issue in result.Issues)
+                sb.AppendLine($"  - {issue.Category}.{issue.InvalidValue}");
+            sb.Append("Verify these values before running the script.");
+            return sb.ToString();
         }
 
         public void InsertCode(string code)
@@ -596,8 +888,8 @@ namespace DynamoCopilot.Extension.ViewModels
                 // within the history window sent to the LLM. If so, skip re-sending the
                 // code — the LLM already has it in context from its previous response.
                 var (lastCode, lastCodeIndex) = GetLastGeneratedCode();
-                int historyStart = Math.Max(0, _currentSession.Messages.Count - _settings.MaxHistoryMessages);
-                bool codeInHistory  = lastCodeIndex >= historyStart;
+                bool codeInHistory = ChatContextBuilder.IsMessageInContext(
+                    _currentSession.Messages, lastCodeIndex, _settings.MaxHistoryTokens);
                 bool codeUnchanged  = lastCode != null
                                    && codeInHistory
                                    && !string.IsNullOrWhiteSpace(code)
@@ -625,7 +917,7 @@ namespace DynamoCopilot.Extension.ViewModels
                               $"Please fix the error and return the complete fixed code in a single ```python ... ``` block.";
                 }
 
-                await SendMessageAsync(message);
+                await SendMessageAsync("!direct " + message);
             }
             catch (Exception ex) { ShowStatus($"Could not read error: {ex.Message}"); }
         }
@@ -849,15 +1141,10 @@ namespace DynamoCopilot.Extension.ViewModels
             timer.Start();
         }
 
-        private List<ChatMessage> BuildMessageList(string engineName)
+        private List<ChatMessage> BuildMessageList(string engineName, string? ragContext = null)
         {
-            var result = new List<ChatMessage>();
-            result.Add(SystemPromptFactory.Build(engineName));
-            var msgs  = _currentSession.Messages;
-            int start = Math.Max(0, msgs.Count - _settings.MaxHistoryMessages);
-            for (int i = start; i < msgs.Count; i++)
-                result.Add(msgs[i]);
-            return result;
+            var systemPrompt = SystemPromptFactory.Build(engineName, ragContext);
+            return ChatContextBuilder.Build(systemPrompt, _currentSession.Messages, _settings.MaxHistoryTokens);
         }
 
         /// <summary>
@@ -874,6 +1161,13 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             return (null, -1);
         }
+
+        /// <summary>
+        /// Returns a compact, anchor-first message list for the spec classifier.
+        /// Always includes early messages (user instructions) + the recent tail.
+        /// </summary>
+        private IList<ChatMessage> GetRecentHistoryForClassifier()
+            => ChatContextBuilder.BuildForClassifier(_currentSession.Messages);
 
         /// <summary>
         /// Normalises a Python code string for comparison: collapses line endings and trims whitespace.
@@ -981,6 +1275,9 @@ namespace DynamoCopilot.Extension.ViewModels
                 RegexOptions.Singleline | RegexOptions.IgnoreCase).Trim();
             return string.IsNullOrWhiteSpace(result) ? string.Empty : result;
         }
+
+        private static string Truncate(string s, int max)
+            => s.Length <= max ? s : s.Substring(0, max) + "…";
 
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? n = null)

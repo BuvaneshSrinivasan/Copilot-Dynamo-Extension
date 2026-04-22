@@ -74,7 +74,22 @@ namespace DynamoCopilot.Core.Services
 
             try
             {
-                var json = File.ReadAllText(_tokenFilePath, Encoding.UTF8);
+                var fileBytes = File.ReadAllBytes(_tokenFilePath);
+                bool isLegacy;
+                string json;
+
+                if (SecureStorage.TryDecrypt(fileBytes, out var decrypted))
+                {
+                    json     = decrypted!;
+                    isLegacy = false;
+                }
+                else
+                {
+                    // Legacy plaintext file — read as UTF-8 and migrate on save
+                    json     = Encoding.UTF8.GetString(fileBytes);
+                    isLegacy = true;
+                }
+
                 var tokens = JsonSerializer.Deserialize<StoredTokens>(json);
                 if (tokens == null || string.IsNullOrEmpty(tokens.AccessToken))
                     return false;
@@ -84,6 +99,10 @@ namespace DynamoCopilot.Core.Services
                     return false;
 
                 _tokens = tokens;
+
+                if (isLegacy)
+                    PersistTokens(_tokens);
+
                 return true;
             }
             catch
@@ -295,7 +314,7 @@ namespace DynamoCopilot.Core.Services
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_tokenFilePath)!);
                 var json = JsonSerializer.Serialize(tokens, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_tokenFilePath, json, Encoding.UTF8);
+                File.WriteAllBytes(_tokenFilePath, SecureStorage.Encrypt(json));
             }
             catch { }
         }

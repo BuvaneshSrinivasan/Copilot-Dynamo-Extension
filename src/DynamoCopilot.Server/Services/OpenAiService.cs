@@ -171,7 +171,7 @@ public class OpenAiService : ILlmService
         - Include the standard Dynamo boilerplate imports when relevant (clr, RevitAPI, etc.)
         - Keep responses concise: one short explanation sentence, then the code
         - If fixing existing code, state the bug in one sentence before showing the fix
-        - Format all code in ```python blocks
+        - ALWAYS wrap every code snippet in ```python ... ``` fences — NEVER output raw code outside a code block
         - Default to IronPython 2 syntax unless the user specifies CPython 3
         """;
 }

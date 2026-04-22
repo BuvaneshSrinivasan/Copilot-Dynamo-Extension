@@ -29,7 +29,15 @@ namespace DynamoCopilot.Extension
         {
             _loadedParams = loadedParams ?? throw new ArgumentNullException(nameof(loadedParams));
 
+            // Catch any unhandled exception on the WPF dispatcher so we can log it
+            // and keep Dynamo alive. Only suppress exceptions that originate from our
+            // own code — anything else is re-raised.
+            System.Windows.Application.Current.DispatcherUnhandledException += OnDispatcherUnhandledException;
+
             CreateView(loadedParams);
+
+            CopilotLogger.Log("Extension loaded",
+                $"server={(_viewModel != null ? "ViewModel OK" : "ViewModel NULL")}");
 
             // Run startup auth check without blocking the Loaded() call.
             // InitializeAsync updates ViewModel properties via OnPropertyChanged,
@@ -51,6 +59,13 @@ namespace DynamoCopilot.Extension
 
         public void Shutdown()
         {
+            try
+            {
+                if (System.Windows.Application.Current != null)
+                    System.Windows.Application.Current.DispatcherUnhandledException -= OnDispatcherUnhandledException;
+            }
+            catch { }
+
             _viewModel?.Shutdown();
             _viewModel = null;
             _view      = null;
@@ -75,6 +90,33 @@ namespace DynamoCopilot.Extension
                 _loadedParams.AddToExtensionsSideBar(this, _view);
                 _panelOpen = true;
                 if (_toggleMenuItem != null) _toggleMenuItem.Header = "Hide Panel";
+            }
+        }
+
+        private void OnDispatcherUnhandledException(
+            object sender,
+            System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            var ex = e.Exception;
+            // Only intercept exceptions that originate from our extension code.
+            // Anything else is left for Dynamo's own handler.
+            var trace = ex.StackTrace ?? string.Empty;
+            bool isOurs = trace.IndexOf("DynamoCopilot", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!isOurs && ex.InnerException != null)
+                isOurs = (ex.InnerException.StackTrace ?? string.Empty)
+                    .IndexOf("DynamoCopilot", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (isOurs)
+            {
+                CopilotLogger.Log("DispatcherUnhandledException (handled)", ex);
+                e.Handled = true; // Prevent Dynamo from crashing
+                // Let the ViewModel surface the error gracefully
+                try { _viewModel?.HandleRenderException(ex); } catch { }
+            }
+            else
+            {
+                // Not ours — log it but do not suppress
+                CopilotLogger.Log("DispatcherUnhandledException (not ours — not handled)", ex);
             }
         }
 

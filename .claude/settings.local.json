@@ -3,7 +3,9 @@
     "allow": [
       "Bash(dotnet restore:*)",
       "Bash(dotnet build:*)",
-      "Bash(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"Test1234!\"}')"
+      "Bash(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"Test1234!\"}')",
+      "Read(//c/Users/BHSS/Downloads/Dynamo code base/Dynamo-master/**)",
+      "Bash(find ./src -type f -name \"PackageManagerClientViewModel.cs\")"
     ]
   }
 }
