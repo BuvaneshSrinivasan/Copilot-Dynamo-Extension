@@ -51,11 +51,14 @@ public static class AuthEndpoints
         // BCrypt.HashPassword handles salt generation automatically.
         // A salt is a random value mixed into the hash so two identical passwords
         // produce different hashes — prevents rainbow table attacks.
+        var now = DateTime.UtcNow;
         var user = new User
         {
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            IsActive = true // open registration: everyone who signs up gets access
+            IsActive = true, // open registration: everyone who signs up gets access
+            LicenseStartDate = now,
+            LicenseEndDate = now.AddMonths(6)
         };
 
         db.Users.Add(user);
@@ -89,6 +92,11 @@ public static class AuthEndpoints
         if (!user.IsActive)
             return Results.Json(
                 new { error = "Your account has been deactivated. Please contact support." },
+                statusCode: 403);
+
+        if (user.LicenseEndDate.HasValue && user.LicenseEndDate.Value < DateTime.UtcNow)
+            return Results.Json(
+                new { error = "Your licence has expired. Please contact support to renew.", expiredAt = user.LicenseEndDate.Value },
                 statusCode: 403);
 
         // Generate both tokens

@@ -1164,6 +1164,27 @@
                         </TextBlock>
                     </StackPanel>
 
+                    <!-- Licence expiry row -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="Expires on:"
+                                   FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding LicenseExpiryDisplay}"
+                                   FontSize="11" FontWeight="SemiBold"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLicenseExpired}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+
                     <!-- Tokens used today -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
                         <TextBlock Text="Tokens today:"

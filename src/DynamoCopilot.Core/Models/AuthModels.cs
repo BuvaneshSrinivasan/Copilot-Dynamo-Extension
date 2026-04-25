@@ -40,6 +40,15 @@ namespace DynamoCopilot.Core.Models
 
         [JsonPropertyName("isActive")]
         public bool IsActive { get; set; }
+
+        [JsonPropertyName("licenseStartDate")]
+        public DateTime? LicenseStartDate { get; set; }
+
+        [JsonPropertyName("licenseEndDate")]
+        public DateTime? LicenseEndDate { get; set; }
+
+        [JsonPropertyName("licenseExpired")]
+        public bool LicenseExpired { get; set; }
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

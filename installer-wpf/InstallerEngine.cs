@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +16,7 @@ public class InstallerEngine
     private static readonly string ProductionUrl = new DynamoCopilotSettings().ServerUrl;
     private const string LocalServerUrl = "http://localhost:8080";
     private const int    MaxHistory     = 40;
+    private const string ReleaseBase    = "https://github.com/BuvaneshSrinivasan/Copilot-Dynamo-Extension/releases/download/v1.0.0";
 
     private static readonly (string RelPath, string Tfm)[] DynamoPaths =
     [
@@ -30,19 +32,44 @@ public class InstallerEngine
 
     public async Task RunAsync(IProgress<InstallStep> progress, CancellationToken ct = default)
     {
-        var appData  = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var destBase = Path.Combine(appData, "DynamoCopilot");
+        var appData   = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var destBase  = Path.Combine(appData, "DynamoCopilot");
+        var modelsDir = Path.Combine(destBase, "models");
 
-        progress.Report(new("Extracting files…", 20));
-        await Task.Run(() => ExtractPayload(destBase), ct);
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Add("User-Agent", "DynamoCopilot-Installer");
 
-        progress.Report(new("Writing settings…", 70));
+        // dist.zip: ~119 MB  →  5–25%
+        await DownloadAndExtractDistAsync(http, destBase, progress, ct);
+
+        // nodes.db: ~375 MB  →  27–75%
+        await DownloadFileAsync(http,
+            $"{ReleaseBase}/nodes.db",
+            Path.Combine(destBase, "nodes.db"),
+            "Downloading node database",
+            startPct: 27, endPct: 75, progress, ct);
+
+        // model.onnx: ~87 MB  →  75–90%
+        await DownloadFileAsync(http,
+            $"{ReleaseBase}/model.onnx",
+            Path.Combine(modelsDir, "model.onnx"),
+            "Downloading AI model",
+            startPct: 75, endPct: 90, progress, ct);
+
+        // vocab.txt: tiny  →  90–92%
+        await DownloadFileAsync(http,
+            $"{ReleaseBase}/vocab.txt",
+            Path.Combine(modelsDir, "vocab.txt"),
+            "Downloading vocabulary",
+            startPct: 90, endPct: 92, progress, ct);
+
+        progress.Report(new("Writing settings…", 94));
         await Task.Run(() => WriteSettings(destBase), ct);
 
-        progress.Report(new("Registering with Dynamo…", 80));
+        progress.Report(new("Registering with Dynamo…", 97));
         await Task.Run(() => RegisterDynamo(destBase), ct);
 
-        progress.Report(new("Finishing…", 95));
+        progress.Report(new("Finishing…", 99));
         await Task.Delay(400, ct);
 
         progress.Report(new("Done", 100));
@@ -50,99 +77,82 @@ public class InstallerEngine
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static void ExtractPayload(string destBase)
+    private static async Task DownloadAndExtractDistAsync(
+        HttpClient http, string destBase,
+        IProgress<InstallStep> progress, CancellationToken ct)
     {
-        // Layout: [exe bytes][zip bytes][zip_start_offset: int64 LE, 8 bytes]
-        // The 8-byte trailer tells us exactly where the zip region begins so we can
-        // give ZipArchive a SubStream over that region only — its internal offsets
-        // are then correct and it never sees the exe bytes.
-        var exePath = Environment.ProcessPath
-            ?? throw new InvalidOperationException("Cannot determine executable path.");
-
-        using var exeStream = File.OpenRead(exePath);
-
-        exeStream.Seek(-8, SeekOrigin.End);
-        var buf = new byte[8];
-        exeStream.ReadExactly(buf);
-        var zipStart  = BitConverter.ToInt64(buf);
-        var zipLength = exeStream.Length - 8 - zipStart;
-
-        if (zipStart <= 0 || zipLength <= 0)
-            throw new InvalidOperationException(
-                "Payload not found. This installer may be corrupted — please re-download it.");
-
-        using var zipStream = new SubStream(exeStream, zipStart, zipLength);
-        using var zip = new ZipArchive(zipStream, ZipArchiveMode.Read);
-
-        foreach (var entry in zip.Entries)
+        var tempZip = Path.Combine(Path.GetTempPath(), "dynamo_dist.zip");
+        try
         {
-            if (string.IsNullOrEmpty(entry.Name)) continue; // skip directory entries
+            await DownloadFileAsync(http, $"{ReleaseBase}/dist.zip", tempZip,
+                "Downloading extension files", startPct: 5, endPct: 25, progress, ct);
 
-            // zip layout:   dist/net48/…  →  destBase\net48\…
-            //               dist/net8.0-windows/…  →  destBase\net8.0-windows\…
-            //               models/…  →  destBase\models\…
-            //               nodes.db  →  destBase\nodes.db
-            var entryPath = entry.FullName.Replace('\\', '/');
-            var relPath = entryPath.StartsWith("dist/", StringComparison.OrdinalIgnoreCase)
-                ? entryPath["dist/".Length..]
-                : entryPath;
+            progress.Report(new("Extracting extension files…", 26));
+            await Task.Run(() =>
+            {
+                // Wipe old DLL folders so removed files don't linger across updates.
+                foreach (var tfmDir in new[] { "net48", "net8.0-windows" })
+                {
+                    var dir = Path.Combine(destBase, tfmDir);
+                    if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+                }
 
-            var destPath = Path.Combine(destBase, relPath.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-            entry.ExtractToFile(destPath, overwrite: true);
+                using var zip = ZipFile.OpenRead(tempZip);
+                foreach (var entry in zip.Entries)
+                {
+                    if (string.IsNullOrEmpty(entry.Name)) continue;
+
+                    // dist.zip layout: dist/net48/… and dist/net8.0-windows/…
+                    // Strip the leading "dist/" so files land in destBase\net48\… etc.
+                    var entryPath = entry.FullName.Replace('\\', '/');
+                    var relPath   = entryPath.StartsWith("dist/", StringComparison.OrdinalIgnoreCase)
+                        ? entryPath["dist/".Length..]
+                        : entryPath;
+
+                    var destPath = Path.Combine(destBase, relPath.Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                    entry.ExtractToFile(destPath, overwrite: true);
+                }
+            }, ct);
+        }
+        finally
+        {
+            if (File.Exists(tempZip)) File.Delete(tempZip);
         }
     }
 
-    // Exposes a contiguous sub-region of an existing stream as a seekable read-only stream.
-    private sealed class SubStream : Stream
+    private static async Task DownloadFileAsync(
+        HttpClient http, string url, string destPath,
+        string label, int startPct, int endPct,
+        IProgress<InstallStep> progress, CancellationToken ct)
     {
-        private readonly Stream _inner;
-        private readonly long   _start;
-        private readonly long   _length;
-        private long _pos;
+        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
 
-        public SubStream(Stream inner, long start, long length)
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+
+        var total = response.Content.Headers.ContentLength ?? -1L;
+
+        await using var src = await response.Content.ReadAsStreamAsync(ct);
+        await using var dst = File.Create(destPath);
+
+        var buffer     = new byte[81920];
+        long downloaded = 0;
+        int  read;
+
+        while ((read = await src.ReadAsync(buffer, ct)) > 0)
         {
-            _inner = inner; _start = start; _length = length;
-        }
+            await dst.WriteAsync(buffer.AsMemory(0, read), ct);
+            downloaded += read;
 
-        public override bool CanRead  => true;
-        public override bool CanSeek  => true;
-        public override bool CanWrite => false;
-        public override long Length   => _length;
-
-        public override long Position
-        {
-            get => _pos;
-            set => Seek(value, SeekOrigin.Begin);
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            var remaining = _length - _pos;
-            if (remaining <= 0) return 0;
-            count = (int)Math.Min(count, remaining);
-            _inner.Seek(_start + _pos, SeekOrigin.Begin);
-            var read = _inner.Read(buffer, offset, count);
-            _pos += read;
-            return read;
-        }
-
-        public override long Seek(long offset, SeekOrigin origin)
-        {
-            _pos = origin switch
+            if (total > 0)
             {
-                SeekOrigin.Begin   => offset,
-                SeekOrigin.Current => _pos + offset,
-                SeekOrigin.End     => _length + offset,
-                _                  => throw new ArgumentOutOfRangeException(nameof(origin))
-            };
-            return _pos;
+                var pct    = startPct + (int)(downloaded * (endPct - startPct) / total);
+                var doneMb = downloaded / 1_048_576.0;
+                var totMb  = total      / 1_048_576.0;
+                progress.Report(new($"{label} ({doneMb:F0} / {totMb:F0} MB)…", pct));
+            }
         }
-
-        public override void Flush() { }
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static void WriteSettings(string destBase)
@@ -150,8 +160,7 @@ public class InstallerEngine
         Directory.CreateDirectory(destBase);
         var path = Path.Combine(destBase, "settings.json");
 
-        // Preserve user-customised values if the file already exists
-        int existingMaxHistory = MaxHistory;
+        int existingMaxHistory  = MaxHistory;
         string existingLocalUrl = LocalServerUrl;
 
         if (File.Exists(path))

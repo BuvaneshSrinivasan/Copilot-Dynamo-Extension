@@ -10,9 +10,8 @@ $tmp       = Join-Path $env:TEMP 'DynCopilotPayload'
 if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
 New-Item -ItemType Directory $tmp | Out-Null
 
-if (Test-Path $distSrc)   { Copy-Item $distSrc   -Destination $tmp -Recurse }
-if (Test-Path $modelsSrc) { Copy-Item $modelsSrc -Destination $tmp -Recurse }
-if (Test-Path $dbSrc)     { Copy-Item $dbSrc     -Destination $tmp }
+# Only bundle the extension DLLs — nodes.db and ONNX models are downloaded at install time
+if (Test-Path $distSrc) { Copy-Item $distSrc -Destination $tmp -Recurse }
 
 $items = Get-ChildItem $tmp
 if ($items.Count -gt 0) {

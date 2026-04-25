@@ -101,6 +101,17 @@ public class RateLimitMiddleware
             return;
         }
 
+        if (user.LicenseEndDate.HasValue && user.LicenseEndDate.Value < DateTime.UtcNow)
+        {
+            context.Response.StatusCode = 403;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Your licence has expired. Please contact support to renew.",
+                expiredAt = user.LicenseEndDate.Value
+            });
+            return;
+        }
+
         // ── LAZY DAILY RESET ──────────────────────────────────────────────────
         // Instead of a cron job that resets all users at midnight, we reset lazily:
         // on the first request of a new day, we zero out the counters here.

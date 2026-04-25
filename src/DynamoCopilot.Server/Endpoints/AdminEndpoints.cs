@@ -55,6 +55,7 @@ public static class AdminEndpoints
         group.MapPost("/users/{id:guid}/deactivate", DeactivateUserAsync);
         group.MapPost("/users/{id:guid}/reset-usage", ResetUsageAsync);
         group.MapPatch("/users/{id:guid}/limits", SetLimitsAsync);
+        group.MapPost("/users/{id:guid}/extend-license", ExtendLicenseAsync);
     }
 
     // ── GET /admin/users ──────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ public static class AdminEndpoints
         var defaultRequestLimit = int.Parse(config["RateLimit:DailyRequestLimit"] ?? "30");
         var defaultTokenLimit = int.Parse(config["RateLimit:DailyTokenLimit"] ?? "40000");
 
+        var now = DateTime.UtcNow;
         var users = await db.Users
             .OrderByDescending(u => u.CreatedAt)
             .Select(u => new
@@ -86,7 +88,10 @@ public static class AdminEndpoints
                 EffectiveTokenLimit = u.TokenLimit ?? defaultTokenLimit,
                 u.LastResetDate,
                 u.Notes,
-                u.CreatedAt
+                u.CreatedAt,
+                u.LicenseStartDate,
+                u.LicenseEndDate,
+                LicenseExpired = u.LicenseEndDate.HasValue && u.LicenseEndDate.Value < now
             })
             .ToListAsync(ct);
 
@@ -177,7 +182,52 @@ public static class AdminEndpoints
             user.Notes
         });
     }
+
+    // ── POST /admin/users/{id}/extend-license ─────────────────────────────────
+    // Extends (or sets) a user's LicenseEndDate by the given number of months.
+    // If the licence has already expired, the new end date is calculated from today.
+    // If the licence is still active, the months are added to the current end date.
+    //
+    // Request body example:
+    //   { "months": 6 }
+    //   { "months": 12 }
+
+    private static async Task<IResult> ExtendLicenseAsync(
+        Guid id,
+        ExtendLicenseRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        if (request.Months <= 0)
+            return Results.BadRequest(new { error = "Months must be a positive integer." });
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+        if (user is null)
+            return Results.NotFound(new { error = "User not found." });
+
+        var now = DateTime.UtcNow;
+
+        // Base the extension off today if expired/unset, or off the current end date if still valid.
+        var baseDate = (user.LicenseEndDate.HasValue && user.LicenseEndDate.Value > now)
+            ? user.LicenseEndDate.Value
+            : now;
+
+        user.LicenseStartDate ??= now;
+        user.LicenseEndDate = baseDate.AddMonths(request.Months);
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new
+        {
+            message = $"Licence extended for {user.Email}.",
+            user.LicenseStartDate,
+            user.LicenseEndDate
+        });
+    }
 }
 
 /// <summary>Request body for PATCH /admin/users/{id}/limits</summary>
 public record SetLimitsRequest(int? RequestLimit, int? TokenLimit, string? Notes);
+
+/// <summary>Request body for POST /admin/users/{id}/extend-license</summary>
+public record ExtendLicenseRequest(int Months);

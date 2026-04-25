@@ -145,9 +145,10 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── User info ─────────────────────────────────────────────────────────────
 
-        private string _userEmail       = string.Empty;
-        private bool   _isLicenceActive = true;
-        private int    _tokensUsed;
+        private string    _userEmail       = string.Empty;
+        private bool      _isLicenceActive = true;
+        private int       _tokensUsed;
+        private DateTime? _licenseEndDate;
 
         // ── Panel mode ────────────────────────────────────────────────────────────
 
@@ -259,6 +260,18 @@ namespace DynamoCopilot.Extension.ViewModels
         }
 
         public string TokensDisplay => $"{_tokensUsed:N0}";
+
+        public DateTime? LicenseEndDate
+        {
+            get => _licenseEndDate;
+            private set { _licenseEndDate = value; OnPropertyChanged(); OnPropertyChanged(nameof(LicenseExpiryDisplay)); OnPropertyChanged(nameof(IsLicenseExpired)); }
+        }
+
+        public string LicenseExpiryDisplay => _licenseEndDate.HasValue
+            ? _licenseEndDate.Value.ToLocalTime().ToString("d MMM yyyy")
+            : "—";
+
+        public bool IsLicenseExpired => _licenseEndDate.HasValue && _licenseEndDate.Value < DateTime.UtcNow;
 
         // ── Chat bindings ─────────────────────────────────────────────────────────
 
@@ -476,9 +489,10 @@ namespace DynamoCopilot.Extension.ViewModels
             var info = await _authService.GetUserInfoAsync();
             if (info == null) return;
 
-            UserEmail    = info.Email;
-            TokensUsed   = info.DailyTokenCount;
-            IsLicenceActive = info.IsActive;
+            UserEmail       = info.Email;
+            TokensUsed      = info.DailyTokenCount;
+            IsLicenceActive = info.IsActive && !info.LicenseExpired;
+            LicenseEndDate  = info.LicenseEndDate;
         }
 
         // ── Chat actions ──────────────────────────────────────────────────────────

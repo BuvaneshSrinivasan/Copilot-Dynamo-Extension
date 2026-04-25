@@ -64,6 +64,12 @@ public class User
     // e.g. "referred by John", "paying customer from March", "test account"
     public string? Notes { get; set; }
 
+    // LICENSE VALIDITY
+    // Set on registration and enforced by RateLimitMiddleware and the login endpoint.
+    // Admins can extend LicenseEndDate via POST /admin/users/{id}/extend-license.
+    public DateTime? LicenseStartDate { get; set; }
+    public DateTime? LicenseEndDate { get; set; }
+
     // AUDIT
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

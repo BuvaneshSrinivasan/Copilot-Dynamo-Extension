@@ -13,23 +13,10 @@
     <ApplicationIcon />
     <!-- Change Company here to update the publisher shown in the installer UI -->
     <Company>BimEra</Company>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.2</Version>
+    <FileVersion>1.0.2</FileVersion>
     <Product>DynamoCopilot</Product>
   </PropertyGroup>
-
-  <!-- Step 1: Build payload.zip from dist DLLs + AI models + nodes.db -->
-  <Target Name="CreatePayload" BeforeTargets="BeforeBuild">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build\create_payload.ps1&quot; -ProjectDir &quot;$(MSBuildProjectDirectory)&quot;" />
-  </Target>
-
-  <!-- Step 2: After publish, stream-append payload.zip to the single-file exe.
-       ZIP archives are read from the end of a stream, so ZipArchive finds the zip
-       correctly even with the exe bytes prepended — same trick self-extracting zips use. -->
-  <Target Name="AppendPayload" AfterTargets="Publish">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build\append_payload.ps1&quot; -ExePath &quot;$(MSBuildProjectDirectory)\$(PublishDir)DynamoCopilot-Setup.exe&quot; -ZipPath &quot;$(MSBuildProjectDirectory)\payload.zip&quot;" />
-  </Target>
-
 
   <ItemGroup>
     <ProjectReference Include="..\src\DynamoCopilot.Core\DynamoCopilot.Core.csproj" />

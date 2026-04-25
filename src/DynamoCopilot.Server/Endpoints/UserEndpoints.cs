@@ -37,7 +37,10 @@ public static class UserEndpoints
         {
             user.Email,
             user.DailyTokenCount,
-            user.IsActive
+            user.IsActive,
+            user.LicenseStartDate,
+            user.LicenseEndDate,
+            LicenseExpired = user.LicenseEndDate.HasValue && user.LicenseEndDate.Value < DateTime.UtcNow
         });
     }
 }
