@@ -36,18 +36,18 @@ public class InstallerEngine
         var destBase  = Path.Combine(appData, "DynamoCopilot");
         var modelsDir = Path.Combine(destBase, "models");
 
+        // DLLs + runtimes: embedded in exe payload  →  3–10%
+        await ExtractEmbeddedDistAsync(destBase, progress, ct);
+
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Add("User-Agent", "DynamoCopilot-Installer");
 
-        // dist.zip: ~119 MB  →  5–25%
-        await DownloadAndExtractDistAsync(http, destBase, progress, ct);
-
-        // nodes.db: ~375 MB  →  27–75%
+        // nodes.db: ~375 MB  →  12–75%
         await DownloadFileAsync(http,
             $"{ReleaseBase}/nodes.db",
             Path.Combine(destBase, "nodes.db"),
             "Downloading node database",
-            startPct: 27, endPct: 75, progress, ct);
+            startPct: 12, endPct: 75, progress, ct);
 
         // model.onnx: ~87 MB  →  75–90%
         await DownloadFileAsync(http,
@@ -77,48 +77,111 @@ public class InstallerEngine
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static async Task DownloadAndExtractDistAsync(
-        HttpClient http, string destBase,
-        IProgress<InstallStep> progress, CancellationToken ct)
+    private static async Task ExtractEmbeddedDistAsync(
+        string destBase, IProgress<InstallStep> progress, CancellationToken ct)
     {
-        var tempZip = Path.Combine(Path.GetTempPath(), "dynamo_dist.zip");
-        try
-        {
-            await DownloadFileAsync(http, $"{ReleaseBase}/dist.zip", tempZip,
-                "Downloading extension files", startPct: 5, endPct: 25, progress, ct);
+        progress.Report(new("Extracting extension files…", 3));
 
-            progress.Report(new("Extracting extension files…", 26));
-            await Task.Run(() =>
+        var exePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Cannot determine installer path.");
+
+        await Task.Run(() =>
+        {
+            using var fs = File.OpenRead(exePath);
+
+            // Last 8 bytes = original exe size (little-endian int64) written by append_payload.ps1
+            fs.Seek(-8, SeekOrigin.End);
+            Span<byte> trailer = stackalloc byte[8];
+            fs.ReadExactly(trailer);
+            var exeSize = BitConverter.ToInt64(trailer);
+            var zipLen  = fs.Length - exeSize - 8;
+
+            if (zipLen <= 0)
+                throw new InvalidDataException("No embedded payload found. Rebuild with build-installer.ps1.");
+
+            // Wipe old DLL folders so stale files don't linger across updates
+            foreach (var tfm in new[] { "net48", "net8.0-windows" })
             {
-                // Wipe old DLL folders so removed files don't linger across updates.
-                foreach (var tfmDir in new[] { "net48", "net8.0-windows" })
-                {
-                    var dir = Path.Combine(destBase, tfmDir);
-                    if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-                }
+                var dir = Path.Combine(destBase, tfm);
+                if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            }
 
-                using var zip = ZipFile.OpenRead(tempZip);
-                foreach (var entry in zip.Entries)
-                {
-                    if (string.IsNullOrEmpty(entry.Name)) continue;
+            using var sub = new SubStream(fs, exeSize, zipLen);
+            using var zip = new ZipArchive(sub, ZipArchiveMode.Read, leaveOpen: true);
 
-                    // dist.zip layout: dist/net48/… and dist/net8.0-windows/…
-                    // Strip the leading "dist/" so files land in destBase\net48\… etc.
-                    var entryPath = entry.FullName.Replace('\\', '/');
-                    var relPath   = entryPath.StartsWith("dist/", StringComparison.OrdinalIgnoreCase)
-                        ? entryPath["dist/".Length..]
-                        : entryPath;
+            foreach (var entry in zip.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.Name)) continue;
 
-                    var destPath = Path.Combine(destBase, relPath.Replace('/', Path.DirectorySeparatorChar));
-                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-                    entry.ExtractToFile(destPath, overwrite: true);
-                }
-            }, ct);
-        }
-        finally
+                // Strip leading "dist/" so files land in destBase\net48\… etc.
+                var rel  = entry.FullName.Replace('\\', '/');
+                var rel2 = rel.StartsWith("dist/", StringComparison.OrdinalIgnoreCase)
+                    ? rel["dist/".Length..]
+                    : rel;
+
+                var dest = Path.Combine(destBase, rel2.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                entry.ExtractToFile(dest, overwrite: true);
+            }
+        }, ct);
+
+        progress.Report(new("Extension files extracted.", 10));
+    }
+
+    // Wraps a byte-range of an existing stream so ZipArchive never sees exe bytes
+    private sealed class SubStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly long   _start;
+        private readonly long   _length;
+        private          long   _pos;
+
+        public SubStream(Stream inner, long start, long length)
         {
-            if (File.Exists(tempZip)) File.Delete(tempZip);
+            _inner  = inner;
+            _start  = start;
+            _length = length;
+            _inner.Seek(start, SeekOrigin.Begin);
         }
+
+        public override bool CanRead  => true;
+        public override bool CanSeek  => true;
+        public override bool CanWrite => false;
+        public override long Length   => _length;
+
+        public override long Position
+        {
+            get => _pos;
+            set { _inner.Seek(_start + value, SeekOrigin.Begin); _pos = value; }
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var remaining = _length - _pos;
+            if (remaining <= 0) return 0;
+            count = (int)Math.Min(count, remaining);
+            var read = _inner.Read(buffer, offset, count);
+            _pos += read;
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            var newPos = origin switch
+            {
+                SeekOrigin.Begin   => offset,
+                SeekOrigin.Current => _pos + offset,
+                SeekOrigin.End     => _length + offset,
+                _                  => throw new ArgumentException("Invalid origin", nameof(origin))
+            };
+            _inner.Seek(_start + newPos, SeekOrigin.Begin);
+            _pos = newPos;
+            return _pos;
+        }
+
+        public override void SetLength(long value)                       => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
     }
 
     private static async Task DownloadFileAsync(

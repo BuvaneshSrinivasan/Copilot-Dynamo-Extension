@@ -13,7 +13,7 @@ New-Item -ItemType Directory $tmp | Out-Null
 # Only bundle the extension DLLs — nodes.db and ONNX models are downloaded at install time
 if (Test-Path $distSrc) { Copy-Item $distSrc -Destination $tmp -Recurse }
 
-$items = Get-ChildItem $tmp
+$items = @(Get-ChildItem $tmp)
 if ($items.Count -gt 0) {
     Compress-Archive -Path (Join-Path $tmp '*') -DestinationPath $zipDest -Force
     Write-Host "payload.zip created at $zipDest"

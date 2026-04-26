@@ -34,6 +34,36 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# ── DPAPI-aware settings helpers ──────────────────────────────────────────────
+# settings.json is encrypted by Windows DPAPI after the extension first runs.
+# These helpers transparently decrypt/re-encrypt so the script can modify it.
+
+Add-Type -AssemblyName System.Security
+
+function Read-SettingsJson {
+    param([string]$Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    try {
+        $dec = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $bytes, $null,
+            [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+        return [System.Text.Encoding]::UTF8.GetString($dec).TrimStart([char]0xFEFF)
+    }
+    catch {
+        # Not yet encrypted — plain UTF-8 JSON (first run before extension migrates it)
+        return [System.Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF)
+    }
+}
+
+function Write-SettingsJson {
+    param([string]$Path, [string]$Json)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Json)
+    $enc   = [System.Security.Cryptography.ProtectedData]::Protect(
+        $bytes, $null,
+        [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    [System.IO.File]::WriteAllBytes($Path, $enc)
+}
+
 $RepoRoot    = if ($PSScriptRoot) { $PSScriptRoot } else { $PSCommandPath | Split-Path -Parent }
 if (-not $RepoRoot) { $RepoRoot = (Get-Location).Path }
 $ExtProj     = Join-Path $RepoRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
@@ -142,6 +172,7 @@ function Ensure-Settings {
         localServerUrl      = "http://localhost:8080"
     } | ConvertTo-Json -Depth 4
 
+    # Write plaintext — extension will encrypt on first load
     Set-Content -Path $SettingsFile -Value $DefaultSettings -Encoding UTF8
     Write-Host "`n    settings.json created: $SettingsFile" -ForegroundColor Green
     Write-Host "    Edit 'serverUrl' there if you need to point to a different server." -ForegroundColor DarkGray
@@ -156,7 +187,9 @@ function Set-LocalServerMode {
     $SettingsFile = Join-Path $DestBase "settings.json"
     if (-not (Test-Path $SettingsFile)) { return }
 
-    $settings = Get-Content $SettingsFile -Raw | ConvertFrom-Json
+    # Use DPAPI-aware reader — file may be encrypted after first extension run
+    $json     = Read-SettingsJson -Path $SettingsFile
+    $settings = $json | ConvertFrom-Json
 
     if (-not $settings.PSObject.Properties['useLocalServer']) {
         Add-Member -InputObject $settings -MemberType NoteProperty -Name useLocalServer -Value $Enabled
@@ -172,7 +205,8 @@ function Set-LocalServerMode {
         $settings.localServerUrl = $Url
     }
 
-    $settings | ConvertTo-Json -Depth 4 | Set-Content -Path $SettingsFile -Encoding UTF8
+    # Write back encrypted so format stays consistent with what the extension expects
+    Write-SettingsJson -Path $SettingsFile -Json ($settings | ConvertTo-Json -Depth 4)
 
     Write-Host "    useLocalServer = $Enabled" -ForegroundColor DarkGray
     if ($Enabled) { Write-Host "    localServerUrl = $Url" -ForegroundColor DarkGray }

@@ -222,7 +222,7 @@ Services/
 Settings/DynamoCopilotSettings.cs
 
 [metadataReferences]
-<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.25/ref/net8.0/
+<NUGET>/microsoft.netcore.app.ref/8.0.25/ref/net8.0/
  Microsoft.CSharp.dll
  Microsoft.VisualBasic.Core.dll
  Microsoft.VisualBasic.dll
@@ -389,17 +389,17 @@ Settings/DynamoCopilotSettings.cs
 <NUGET>/system.security.cryptography.protecteddata/8.0.0/lib/net8.0/System.Security.Cryptography.ProtectedData.dll
 
 [analyzerReferences]
-<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.25/analyzers/dotnet/cs/
+<DOTNET>/sdk/10.0.300-preview.0.26177.108/Sdks/Microsoft.NET.Sdk/analyzers/
+ Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
+ Microsoft.CodeAnalysis.NetAnalyzers.dll
+<NUGET>/microsoft.netcore.app.ref/8.0.25/analyzers/dotnet/cs/
  Microsoft.Interop.ComInterfaceGenerator.dll
  Microsoft.Interop.JavaScript.JSImportGenerator.dll
  Microsoft.Interop.LibraryImportGenerator.dll
  Microsoft.Interop.SourceGeneration.dll
  System.Text.Json.SourceGeneration.dll
  System.Text.RegularExpressions.Generator.dll
-<DOTNET>/sdk/10.0.201/Sdks/Microsoft.NET.Sdk/analyzers/
- Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
- Microsoft.CodeAnalysis.NetAnalyzers.dll
 
 [analyzerConfigFiles]
-<DOTNET>/sdk/10.0.201/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
+<DOTNET>/sdk/10.0.300-preview.0.26177.108/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
 obj/Debug/net8.0-windows/DynamoCopilot.Core.GeneratedMSBuildEditorConfig.editorconfig

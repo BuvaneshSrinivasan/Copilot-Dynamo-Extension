@@ -100,20 +100,34 @@ Remove-Item $StagingDist -Recurse -Force
 
 Write-Host "    dist\ ready at: $OutputDist" -ForegroundColor Green
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# ── Embed DLL payload into the exe ───────────────────────────────────────────
 
-$ExePath = Join-Path $OutputDir "DynamoCopilot-Setup.exe"
-if (-not (Test-Path $ExePath)) {
-    throw "Installer exe not found: $ExePath"
-}
+Write-Host "`n==> Embedding payload into installer ..." -ForegroundColor Cyan
+
+$InstallerDir  = Join-Path $RepoRoot "installer-wpf"
+$PayloadScript = Join-Path $InstallerDir "build\create_payload.ps1"
+$AppendScript  = Join-Path $InstallerDir "build\append_payload.ps1"
+$PayloadZip    = Join-Path $InstallerDir "payload.zip"
+$ExePath       = Join-Path $OutputDir "DynamoCopilot-Setup.exe"
+
+if (-not (Test-Path $ExePath))    { throw "Installer exe not found: $ExePath" }
+if (-not (Test-Path $PayloadScript)) { throw "create_payload.ps1 not found: $PayloadScript" }
+if (-not (Test-Path $AppendScript))  { throw "append_payload.ps1 not found: $AppendScript" }
+
+& $PayloadScript -ProjectDir $InstallerDir
+if ($LASTEXITCODE -ne 0) { throw "create_payload.ps1 failed" }
+
+& $AppendScript -ExePath $ExePath -ZipPath $PayloadZip
+if ($LASTEXITCODE -ne 0) { throw "append_payload.ps1 failed" }
+
+if (Test-Path $PayloadZip) { Remove-Item $PayloadZip -Force }
+
+# ── Summary ───────────────────────────────────────────────────────────────────
 
 $SizeMb = [math]::Round((Get-Item $ExePath).Length / 1MB, 1)
 
 Write-Host ""
 Write-Host "==> Done! Installer ready ($SizeMb MB)" -ForegroundColor Green
-Write-Host "    Exe:    $ExePath"                   -ForegroundColor Green
-Write-Host "    Dist:   $OutputDist"                -ForegroundColor Green
-Write-Host "    Models: $(Join-Path $OutputDir 'models')"  -ForegroundColor Green
-Write-Host "    DB:     $(Join-Path $OutputDir 'nodes.db')" -ForegroundColor Green
-Write-Host ""
-Write-Host "    Distribute the entire Output\ folder (exe + dist\ + models\ + nodes.db)." -ForegroundColor DarkGray
+Write-Host "    Exe: $ExePath"                      -ForegroundColor Green
+Write-Host "    DLLs and runtimes are embedded in the exe." -ForegroundColor DarkGray
+Write-Host "    nodes.db, model.onnx, vocab.txt are downloaded at install time." -ForegroundColor DarkGray
