@@ -70,6 +70,18 @@ foreach ($Tfm in @("net48", "net8.0-windows")) {
     }
 
     Write-Host "    OK: $Out" -ForegroundColor Green
+
+    # Prune non-Windows ONNX runtime folders — dotnet publish for net8 pulls in
+    # native libs for every platform (iOS, macOS, Android, Linux…). Only win-* is needed.
+    $RuntimesDir = Join-Path $Out "runtimes"
+    if (Test-Path $RuntimesDir) {
+        Get-ChildItem $RuntimesDir -Directory |
+            Where-Object { $_.Name -notlike "win*" } |
+            ForEach-Object {
+                Remove-Item $_.FullName -Recurse -Force
+                Write-Host "    Pruned: runtimes\$($_.Name)" -ForegroundColor DarkGray
+            }
+    }
 }
 
 # ── Build WPF installer ───────────────────────────────────────────────────────

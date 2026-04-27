@@ -109,8 +109,17 @@ function Build-And-Deploy {
 
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $Tfm" }
 
-    # Copy DLLs to %AppData%\DynamoCopilot\<tfm>\
+    # Prune non-Windows ONNX runtime folders (same as build-installer.ps1)
+    $RuntimesDir = Join-Path $PublishDir "runtimes"
+    if (Test-Path $RuntimesDir) {
+        Get-ChildItem $RuntimesDir -Directory |
+            Where-Object { $_.Name -notlike "win*" } |
+            ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
+    }
+
+    # Copy DLLs to %AppData%\DynamoCopilot\<tfm>\ (wipe first so removed files don't linger)
     $Dest = Join-Path $DestBase $Tfm
+    if (Test-Path $Dest) { Remove-Item $Dest -Recurse -Force }
     New-Item -ItemType Directory -Path $Dest -Force | Out-Null
     Copy-Item "$PublishDir\*" $Dest -Recurse -Force
     Write-Host "    DLLs  -> $Dest" -ForegroundColor Green
