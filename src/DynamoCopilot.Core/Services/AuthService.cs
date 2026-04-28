@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -145,7 +146,7 @@ namespace DynamoCopilot.Core.Services
 
             try
             {
-                var body = JsonSerializer.Serialize(new { refreshToken = _tokens.RefreshToken });
+                var body = JsonSerializer.Serialize(new Dictionary<string, string> { ["refreshToken"] = _tokens.RefreshToken });
                 using var request = new HttpRequestMessage(HttpMethod.Post, _serverUrl + "/auth/refresh");
                 request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
@@ -176,7 +177,7 @@ namespace DynamoCopilot.Core.Services
         {
             try
             {
-                var body = JsonSerializer.Serialize(new { email, password });
+                var body = JsonSerializer.Serialize(new Dictionary<string, string> { ["email"] = email, ["password"] = password });
                 using var request = new HttpRequestMessage(HttpMethod.Post, _serverUrl + "/auth/login");
                 request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
@@ -225,7 +226,7 @@ namespace DynamoCopilot.Core.Services
         {
             try
             {
-                var body = JsonSerializer.Serialize(new { email, password });
+                var body = JsonSerializer.Serialize(new Dictionary<string, string> { ["email"] = email, ["password"] = password });
                 using var request = new HttpRequestMessage(HttpMethod.Post, _serverUrl + "/auth/register");
                 request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 

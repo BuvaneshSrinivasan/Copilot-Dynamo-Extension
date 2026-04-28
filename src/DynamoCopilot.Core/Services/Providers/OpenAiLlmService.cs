@@ -50,11 +50,11 @@ namespace DynamoCopilot.Core.Services.Providers
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var msgArray = BuildMessages(messages);
-            var body = JsonSerializer.Serialize(new
+            var body = JsonSerializer.Serialize(new Dictionary<string, object>
             {
-                model    = _model,
-                stream   = true,
-                messages = msgArray
+                ["model"]    = _model,
+                ["stream"]   = true,
+                ["messages"] = msgArray
             });
 
             using var request = new HttpRequestMessage(
@@ -105,14 +105,14 @@ namespace DynamoCopilot.Core.Services.Providers
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        private static List<object> BuildMessages(IReadOnlyList<ChatMessage> messages)
+        private static List<Dictionary<string, string>> BuildMessages(IReadOnlyList<ChatMessage> messages)
         {
-            var list = new List<object>(messages.Count);
+            var list = new List<Dictionary<string, string>>(messages.Count);
             foreach (var m in messages)
-                list.Add(new
+                list.Add(new Dictionary<string, string>
                 {
-                    role    = RoleString(m.Role),
-                    content = m.Content
+                    ["role"]    = RoleString(m.Role),
+                    ["content"] = m.Content
                 });
             return list;
         }

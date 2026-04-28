@@ -51,7 +51,7 @@ namespace DynamoCopilot.Core.Services
             if (string.IsNullOrEmpty(token))
                 throw new InvalidOperationException("Session expired. Please log in again.");
 
-            var body = JsonSerializer.Serialize(new { query, graphContext });
+            var body = JsonSerializer.Serialize(new Dictionary<string, object?> { ["query"] = query, ["graphContext"] = graphContext });
 
             // ── 2. First attempt ──────────────────────────────────────────────
             var response = await PostAsync(token, body, ct);

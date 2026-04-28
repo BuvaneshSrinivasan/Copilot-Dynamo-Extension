@@ -27,7 +27,7 @@ namespace DynamoCopilot.Core.Services
     public sealed class LocalNodeSearchService
     {
         // Default result cap
-        private const int TopK = 500;
+        private const int TopK = 100;
 
         private readonly string             _dbPath;
         private readonly IEmbeddingService? _embedder;

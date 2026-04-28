@@ -42,7 +42,7 @@ public class InstallerEngine
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Add("User-Agent", "DynamoCopilot-Installer");
 
-        // nodes.db: ~375 MB  →  12–75%
+        // nodes.db: ~186 MB  →  12–75%
         await DownloadFileAsync(http,
             $"{ReleaseBase}/nodes.db",
             Path.Combine(destBase, "nodes.db"),

@@ -1016,6 +1016,7 @@ namespace DynamoCopilot.Extension.ViewModels
             {
                 var model = GetDynamoModel();
                 if (model == null) return false;
+                CopilotLogger.Log($"[Insert] model runtime type = {model.GetType().FullName}");
 
                 var packageFolderPath = _packageState.GetPackageFolderPath(node.PackageName);
                 var (cx, cy) = GetCanvasCenter();
@@ -1026,7 +1027,8 @@ namespace DynamoCopilot.Extension.ViewModels
                     node.PackageName,
                     node.NodeType,
                     packageFolderPath,
-                    cx, cy);
+                    cx, cy,
+                    log: CopilotLogger.Log);
 
                 if (ok) ShowStatus($"Inserted \"{node.Name}\" onto the canvas.");
                 return ok;

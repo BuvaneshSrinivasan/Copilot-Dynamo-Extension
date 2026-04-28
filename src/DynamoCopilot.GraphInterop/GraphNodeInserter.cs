@@ -27,100 +27,229 @@ namespace DynamoCopilot.GraphInterop
         /// Full path to the installed package folder (e.g. "…\packages\Rhythm").
         /// Required for DYF nodes; may be null for ZeroTouch nodes.
         /// </param>
+        /// <param name="log">Optional logger — receives diagnostic messages at each step.</param>
         /// <returns>True if insertion succeeded.</returns>
         public static bool InsertNode(
-            object  dynamoModel,
-            string  nodeName,
-            string  packageName,
-            string  nodeType,
-            string? packageFolderPath,
-            double  canvasX = 0,
-            double  canvasY = 0)
+            object          dynamoModel,
+            string          nodeName,
+            string          packageName,
+            string          nodeType,
+            string?         packageFolderPath,
+            double          canvasX = 0,
+            double          canvasY = 0,
+            Action<string>? log     = null)
         {
+            log?.Invoke($"[NodeInserter] InsertNode START — node={nodeName}  package={packageName}  type={nodeType}  pkgFolder={packageFolderPath}");
+
             if (dynamoModel == null || string.IsNullOrWhiteSpace(nodeName))
+            {
+                log?.Invoke("[NodeInserter] ABORT — dynamoModel is null or nodeName is blank");
                 return false;
+            }
 
             bool isZeroTouch = nodeType != null &&
                 (nodeType.Equals("ZeroTouch", StringComparison.OrdinalIgnoreCase) ||
                  nodeType.Equals("XmlDoc",    StringComparison.OrdinalIgnoreCase));
 
+            log?.Invoke($"[NodeInserter] isZeroTouch={isZeroTouch}");
+
             if (isZeroTouch)
-                return InsertZeroTouchNode(dynamoModel, nodeName, packageFolderPath, canvasX, canvasY);
+                return InsertZeroTouchNode(dynamoModel, nodeName, packageFolderPath, canvasX, canvasY, log);
 
             // DYF, JBNode, or any unrecognised type — try DYF first, fall back to ZeroTouch
-            return InsertDyfNode(dynamoModel, nodeName, packageFolderPath, canvasX, canvasY)
-                || InsertZeroTouchNode(dynamoModel, nodeName, packageFolderPath, canvasX, canvasY);
+            log?.Invoke("[NodeInserter] Trying DYF path first, then ZeroTouch fallback");
+            return InsertDyfNode(dynamoModel, nodeName, packageFolderPath, canvasX, canvasY, log)
+                || InsertZeroTouchNode(dynamoModel, nodeName, packageFolderPath, canvasX, canvasY, log);
         }
 
         // ── ZeroTouch / XmlDoc ────────────────────────────────────────────────
 
         private static bool InsertZeroTouchNode(
-            object dynamoModel, string nodeName, string? packageFolderPath, double x, double y)
+            object dynamoModel, string nodeName, string? packageFolderPath, double x, double y,
+            Action<string>? log)
         {
             try
             {
                 var workspace = GetCurrentWorkspace(dynamoModel);
-                if (workspace == null) return false;
+                if (workspace == null)
+                {
+                    log?.Invoke("[NodeInserter] ZT FAIL — CurrentWorkspace is null");
+                    return false;
+                }
 
-                // Resolve the exact creation name from the package's loaded assemblies
-                // so we pick the right node when multiple packages share the same node name.
-                var creationName = ResolveCreationName(nodeName, packageFolderPath);
+                // ResolveCreationName returns "ClassName.MethodName" (no namespace) which matches
+                // FunctionDescriptor.QualifiedName — the key in LibraryServices' function group map.
+                var creationName = ResolveCreationName(nodeName, packageFolderPath, log);
+                log?.Invoke($"[NodeInserter] ResolveCreationName returned: '{creationName}'");
 
-                var node = ExecuteCreateNode(dynamoModel, workspace, creationName, x, y);
-                return node != null;
+                // For overloaded nodes, QualifiedName alone fails FunctionGroup.GetFunctionDescriptor's
+                // EndsWith check (Dynamo source: FunctionGroup.cs:71). Promote to the real MangledName
+                // ("ClassName.Method@T1,T2") by querying LibraryServices directly.
+                var mangledName = TryResolveMangledName(dynamoModel, creationName, log);
+                log?.Invoke($"[NodeInserter] TryResolveMangledName returned: '{mangledName ?? "(null)"}'");
+                if (mangledName != null) creationName = mangledName;
+
+                log?.Invoke($"[NodeInserter] Calling ExecuteCreateNode with creationName='{creationName}'");
+                var node = ExecuteCreateNode(dynamoModel, workspace, creationName, x, y, log);
+                var ok = node != null;
+                log?.Invoke($"[NodeInserter] ZT result: node found in workspace={ok}");
+                return ok;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[NodeInserter] ZT EXCEPTION — {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
+        // Looks up the exact MangledName from DynamoModel.LibraryServices so that both
+        // non-overloaded ("ClassName.Method") and overloaded ("ClassName.Method@T1,T2") nodes
+        // resolve correctly inside GetNodeFromCommand → CreateNodeFromNameOrType.
+        private static string? TryResolveMangledName(object dynamoModel, string qualifiedName, Action<string>? log)
+        {
+            try
+            {
+                // LibraryServices is internal on DynamoModel — include NonPublic flag.
+                var libServices = dynamoModel.GetType()
+                    .GetProperty("LibraryServices",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?.GetValue(dynamoModel);
+                if (libServices == null)
+                {
+                    log?.Invoke("[NodeInserter] TryResolveMangledName — LibraryServices not found on model (tried Public+NonPublic)");
+                    return null;
+                }
+
+                var lsType = libServices.GetType();
+                log?.Invoke($"[NodeInserter] TryResolveMangledName — LibraryServices type={lsType.FullName}");
+
+                // Non-overloaded: GetFunctionDescriptor(string) finds by QualifiedName
+                var getDesc = lsType.GetMethod("GetFunctionDescriptor",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null, new[] { typeof(string) }, null);
+                log?.Invoke($"[NodeInserter] GetFunctionDescriptor method found={getDesc != null}");
+
+                var desc = getDesc?.Invoke(libServices, new object[] { qualifiedName });
+                if (desc != null)
+                {
+                    var mn = desc.GetType()
+                        .GetProperty("MangledName", BindingFlags.Public | BindingFlags.Instance)
+                        ?.GetValue(desc) as string;
+                    log?.Invoke($"[NodeInserter] GetFunctionDescriptor hit — MangledName='{mn}'");
+                    return mn;
+                }
+
+                log?.Invoke($"[NodeInserter] GetFunctionDescriptor returned null for '{qualifiedName}' — trying GetAllFunctionDescriptors (overload case)");
+
+                // Overloaded: GetAllFunctionDescriptors returns every overload; take the first.
+                var getAll = lsType.GetMethod("GetAllFunctionDescriptors",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null, new[] { typeof(string) }, null);
+                log?.Invoke($"[NodeInserter] GetAllFunctionDescriptors method found={getAll != null}");
+
+                if (getAll?.Invoke(libServices, new object[] { qualifiedName })
+                    is System.Collections.IEnumerable all)
+                {
+                    foreach (var d in all)
+                    {
+                        if (d == null) continue;
+                        var mn = d.GetType()
+                            .GetProperty("MangledName", BindingFlags.Public | BindingFlags.Instance)
+                            ?.GetValue(d) as string;
+                        log?.Invoke($"[NodeInserter] GetAllFunctionDescriptors first hit — MangledName='{mn}'");
+                        return mn;
+                    }
+                    log?.Invoke($"[NodeInserter] GetAllFunctionDescriptors returned empty for '{qualifiedName}'");
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[NodeInserter] TryResolveMangledName EXCEPTION — {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>
-        /// Finds the fully-qualified CLR creation name for a ZeroTouch node by scanning
-        /// assemblies that are already loaded from the package's bin folder.
-        /// Falls back to the bare nodeName if the package assembly isn't loaded yet.
+        /// Finds the creation name for a ZeroTouch node by scanning assemblies already
+        /// loaded from the package's bin folder.
+        /// Returns "ClassName.MethodName" (simple class name, no namespace) to match
+        /// FunctionDescriptor.QualifiedName — the key used by LibraryServices.
+        /// Falls back to the bare nodeName if the assembly isn't loaded yet.
         /// </summary>
-        private static string ResolveCreationName(string nodeName, string? packageFolderPath)
+        private static string ResolveCreationName(string nodeName, string? packageFolderPath, Action<string>? log)
         {
-            if (string.IsNullOrEmpty(packageFolderPath)) return nodeName;
+            if (string.IsNullOrEmpty(packageFolderPath))
+            {
+                log?.Invoke($"[NodeInserter] ResolveCreationName — no packageFolderPath, using nodeName as-is: '{nodeName}'");
+                return nodeName;
+            }
 
             var binDir = Path.Combine(packageFolderPath, "bin");
-            if (!Directory.Exists(binDir)) return nodeName;
+            if (!Directory.Exists(binDir))
+            {
+                log?.Invoke($"[NodeInserter] ResolveCreationName — bin dir not found: '{binDir}', using nodeName as-is");
+                return nodeName;
+            }
 
-            // Build a set of DLL paths inside the package's bin folder (case-insensitive on Windows)
             var packageAsmPaths = new HashSet<string>(
                 Directory.GetFiles(binDir, "*.dll", SearchOption.AllDirectories),
                 StringComparer.OrdinalIgnoreCase);
+            log?.Invoke($"[NodeInserter] ResolveCreationName — {packageAsmPaths.Count} DLL(s) in bin: {string.Join(", ", packageAsmPaths.Select(Path.GetFileName))}");
 
-            // nodeName format: "TypeName.MethodName" or just "TypeName"
             var parts      = nodeName.Split('.');
             var methodPart = parts[parts.Length - 1];
             var typePart   = parts.Length >= 2 ? parts[parts.Length - 2] : methodPart;
+            log?.Invoke($"[NodeInserter] ResolveCreationName — looking for type='{typePart}' method='{methodPart}'");
 
+            int scannedAsms = 0;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 try
                 {
                     if (!packageAsmPaths.Contains(asm.Location)) continue;
+                    scannedAsms++;
+                    log?.Invoke($"[NodeInserter] ResolveCreationName — scanning assembly: {asm.GetName().Name}  Location={asm.Location}");
 
                     foreach (var type in asm.GetExportedTypes())
                     {
                         if (!type.Name.Equals(typePart, StringComparison.OrdinalIgnoreCase))
                             continue;
 
-                        // Check for a matching public static/instance method
+                        log?.Invoke($"[NodeInserter] ResolveCreationName — matched type: FullName={type.FullName}  Name={type.Name}");
+
                         var method = type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)
                             .FirstOrDefault(m => m.Name.Equals(methodPart, StringComparison.OrdinalIgnoreCase));
 
                         if (method != null)
-                            return type.FullName + "." + method.Name;
+                        {
+                            // Use type.Name (NOT type.FullName) — LibraryServices keys by
+                            // FunctionDescriptor.QualifiedName = "ClassName.MethodName", no namespace.
+                            var resolved = type.Name + "." + method.Name;
+                            log?.Invoke($"[NodeInserter] ResolveCreationName — resolved to '{resolved}' (type.FullName was '{type.FullName}')");
+                            return resolved;
+                        }
 
                         // Constructor node: TypeName.TypeName
                         if (type.Name.Equals(methodPart, StringComparison.OrdinalIgnoreCase))
-                            return type.FullName;
+                        {
+                            var resolved = type.Name;
+                            log?.Invoke($"[NodeInserter] ResolveCreationName — constructor node, resolved to '{resolved}'");
+                            return resolved;
+                        }
+
+                        log?.Invoke($"[NodeInserter] ResolveCreationName — type matched but method '{methodPart}' not found on it");
                     }
                 }
-                catch { /* skip assemblies that can't be inspected */ }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"[NodeInserter] ResolveCreationName — skipping assembly ({ex.GetType().Name}: {ex.Message})");
+                }
             }
 
-            return nodeName; // fallback
+            log?.Invoke($"[NodeInserter] ResolveCreationName — scanned {scannedAsms} package assembly/assemblies, no match found, falling back to nodeName='{nodeName}'");
+            return nodeName;
         }
 
         // ── DYF custom node ───────────────────────────────────────────────────
@@ -130,58 +259,74 @@ namespace DynamoCopilot.GraphInterop
             string  nodeName,
             string? packageFolderPath,
             double  x,
-            double  y)
+            double  y,
+            Action<string>? log)
         {
             try
             {
                 Guid guid;
 
-                var dyfPath = FindDyfFile(nodeName, packageFolderPath);
+                var dyfPath = FindDyfFile(nodeName, packageFolderPath, log);
                 if (dyfPath != null)
                 {
+                    log?.Invoke($"[NodeInserter] DYF — found file: {dyfPath}");
                     guid = ParseDyfGuid(dyfPath);
-                    if (guid == Guid.Empty) return false;
-                    if (!EnsureCustomNodeLoaded(dynamoModel, dyfPath, guid))
+                    log?.Invoke($"[NodeInserter] DYF — parsed GUID: {guid}");
+                    if (guid == Guid.Empty)
+                    {
+                        log?.Invoke("[NodeInserter] DYF FAIL — GUID is empty");
                         return false;
+                    }
+                    if (!EnsureCustomNodeLoaded(dynamoModel, dyfPath, guid, log))
+                    {
+                        log?.Invoke("[NodeInserter] DYF FAIL — EnsureCustomNodeLoaded returned false");
+                        return false;
+                    }
                 }
                 else
                 {
-                    // Package folder path unavailable or DYF not found by file name —
-                    // search Dynamo's CustomNodeManager for an already-loaded definition.
-                    guid = FindCustomNodeGuidByName(dynamoModel, nodeName);
-                    if (guid == Guid.Empty) return false;
+                    log?.Invoke("[NodeInserter] DYF — no .dyf file found by name, searching CustomNodeManager");
+                    guid = FindCustomNodeGuidByName(dynamoModel, nodeName, log);
+                    log?.Invoke($"[NodeInserter] DYF — FindCustomNodeGuidByName returned: {guid}");
+                    if (guid == Guid.Empty)
+                    {
+                        log?.Invoke("[NodeInserter] DYF FAIL — custom node GUID not found in CustomNodeManager");
+                        return false;
+                    }
                 }
 
                 var workspace = GetCurrentWorkspace(dynamoModel);
-                if (workspace == null) return false;
+                if (workspace == null)
+                {
+                    log?.Invoke("[NodeInserter] DYF FAIL — CurrentWorkspace is null");
+                    return false;
+                }
 
-                var node = ExecuteCreateNode(dynamoModel, workspace, guid.ToString(), x, y);
-                return node != null;
+                log?.Invoke($"[NodeInserter] DYF — calling ExecuteCreateNode with guid='{guid}'");
+                var node = ExecuteCreateNode(dynamoModel, workspace, guid.ToString(), x, y, log);
+                var ok = node != null;
+                log?.Invoke($"[NodeInserter] DYF result: node found in workspace={ok}");
+                return ok;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[NodeInserter] DYF EXCEPTION — {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
         }
 
-        /// <summary>
-        /// Searches DynamoModel.CustomNodeManager for a loaded custom-node definition
-        /// whose name matches <paramref name="nodeName"/> (simple or fully-qualified).
-        /// Returns <see cref="Guid.Empty"/> when not found.
-        ///
-        /// Verified reflection chain (DLL inspection):
-        ///   CustomNodeManager.LoadedDefinitions → IEnumerable&lt;CustomNodeDefinition&gt;
-        ///     CustomNodeDefinition.FunctionName  (display name)
-        ///     CustomNodeDefinition.FunctionId    (Guid — used in CreateNodeCommand)
-        ///   CustomNodeManager.LoadedWorkspaces  → IEnumerable&lt;CustomNodeWorkspaceModel&gt;
-        ///     CustomNodeWorkspaceModel.Name       (display name)
-        ///     CustomNodeWorkspaceModel.CustomNodeId (Guid)
-        /// </summary>
-        private static Guid FindCustomNodeGuidByName(object dynamoModel, string nodeName)
+        private static Guid FindCustomNodeGuidByName(object dynamoModel, string nodeName, Action<string>? log)
         {
             try
             {
                 var cnm = dynamoModel.GetType()
                     .GetProperty("CustomNodeManager", BindingFlags.Public | BindingFlags.Instance)
                     ?.GetValue(dynamoModel);
-                if (cnm == null) return Guid.Empty;
+                if (cnm == null)
+                {
+                    log?.Invoke("[NodeInserter] FindCustomNodeGuidByName — CustomNodeManager not found");
+                    return Guid.Empty;
+                }
 
                 var simpleName = nodeName.Contains('.')
                     ? nodeName.Substring(nodeName.LastIndexOf('.') + 1)
@@ -192,7 +337,6 @@ namespace DynamoCopilot.GraphInterop
                     (s.Equals(simpleName, StringComparison.OrdinalIgnoreCase) ||
                      s.Equals(nodeName,   StringComparison.OrdinalIgnoreCase));
 
-                // ── 1. LoadedDefinitions (CustomNodeDefinition: FunctionName, FunctionId) ──
                 if (cnm.GetType()
                         .GetProperty("LoadedDefinitions", BindingFlags.Public | BindingFlags.Instance)
                         ?.GetValue(cnm) is System.Collections.IEnumerable defs)
@@ -201,15 +345,19 @@ namespace DynamoCopilot.GraphInterop
                     {
                         if (def == null) continue;
                         var dt = def.GetType();
-                        if (!Matches(dt.GetProperty("FunctionName", BindingFlags.Public | BindingFlags.Instance)
-                                       ?.GetValue(def) as string)) continue;
+                        var fn = dt.GetProperty("FunctionName", BindingFlags.Public | BindingFlags.Instance)
+                                   ?.GetValue(def) as string;
+                        if (!Matches(fn)) continue;
 
                         if (dt.GetProperty("FunctionId", BindingFlags.Public | BindingFlags.Instance)
-                               ?.GetValue(def) is Guid g && g != Guid.Empty) return g;
+                               ?.GetValue(def) is Guid g && g != Guid.Empty)
+                        {
+                            log?.Invoke($"[NodeInserter] FindCustomNodeGuidByName — found in LoadedDefinitions: {g}");
+                            return g;
+                        }
                     }
                 }
 
-                // ── 2. LoadedWorkspaces (CustomNodeWorkspaceModel: Name, CustomNodeId) ──
                 if (cnm.GetType()
                         .GetProperty("LoadedWorkspaces", BindingFlags.Public | BindingFlags.Instance)
                         ?.GetValue(cnm) is System.Collections.IEnumerable workspaces)
@@ -218,33 +366,43 @@ namespace DynamoCopilot.GraphInterop
                     {
                         if (ws == null) continue;
                         var wt = ws.GetType();
-                        if (!Matches(wt.GetProperty("Name", BindingFlags.Public | BindingFlags.Instance)
-                                       ?.GetValue(ws) as string)) continue;
+                        var wsName = wt.GetProperty("Name", BindingFlags.Public | BindingFlags.Instance)
+                                       ?.GetValue(ws) as string;
+                        if (!Matches(wsName)) continue;
 
                         if (wt.GetProperty("CustomNodeId", BindingFlags.Public | BindingFlags.Instance)
-                               ?.GetValue(ws) is Guid g && g != Guid.Empty) return g;
+                               ?.GetValue(ws) is Guid g && g != Guid.Empty)
+                        {
+                            log?.Invoke($"[NodeInserter] FindCustomNodeGuidByName — found in LoadedWorkspaces: {g}");
+                            return g;
+                        }
                     }
                 }
 
+                log?.Invoke($"[NodeInserter] FindCustomNodeGuidByName — not found for '{nodeName}' (simpleName='{simpleName}')");
                 return Guid.Empty;
             }
-            catch { return Guid.Empty; }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[NodeInserter] FindCustomNodeGuidByName EXCEPTION — {ex.GetType().Name}: {ex.Message}");
+                return Guid.Empty;
+            }
         }
 
-        private static string? FindDyfFile(string nodeName, string? packageFolderPath)
+        private static string? FindDyfFile(string nodeName, string? packageFolderPath, Action<string>? log)
         {
             if (string.IsNullOrEmpty(packageFolderPath)) return null;
 
             var dyfDir = Path.Combine(packageFolderPath, "dyf");
-            if (!Directory.Exists(dyfDir)) return null;
+            if (!Directory.Exists(dyfDir))
+            {
+                log?.Invoke($"[NodeInserter] FindDyfFile — dyf dir not found: {dyfDir}");
+                return null;
+            }
 
-            // Strip any namespace prefix: "Rhythm.Views.SheetByName" → "SheetByName"
-            var dotIdx = nodeName.LastIndexOf('.');
-            var simpleName = dotIdx >= 0
-                ? nodeName.Substring(dotIdx + 1)
-                : nodeName;
+            var dotIdx    = nodeName.LastIndexOf('.');
+            var simpleName = dotIdx >= 0 ? nodeName.Substring(dotIdx + 1) : nodeName;
 
-            // Try exact match first, then case-insensitive search
             var exact = Path.Combine(dyfDir, simpleName + ".dyf");
             if (File.Exists(exact)) return exact;
 
@@ -255,12 +413,11 @@ namespace DynamoCopilot.GraphInterop
                     return f;
             }
 
-            // Broader search: check if any DYF has a matching Name attribute inside
             foreach (var f in Directory.EnumerateFiles(dyfDir, "*.dyf"))
             {
                 try
                 {
-                    var xDoc = XDocument.Load(f);
+                    var xDoc   = XDocument.Load(f);
                     var wsName = xDoc.Root?.Attribute("Name")?.Value ?? string.Empty;
                     if (wsName.Equals(simpleName, StringComparison.OrdinalIgnoreCase) ||
                         wsName.Equals(nodeName,   StringComparison.OrdinalIgnoreCase))
@@ -269,6 +426,7 @@ namespace DynamoCopilot.GraphInterop
                 catch { }
             }
 
+            log?.Invoke($"[NodeInserter] FindDyfFile — no .dyf found for '{nodeName}' in {dyfDir}");
             return null;
         }
 
@@ -276,53 +434,64 @@ namespace DynamoCopilot.GraphInterop
         {
             try
             {
-                var xDoc = XDocument.Load(dyfPath);
-                // DYF workspace element carries ID="…" or FunctionId="…"
-                var root = xDoc.Root;
+                var xDoc  = XDocument.Load(dyfPath);
+                var root  = xDoc.Root;
                 var idStr = root?.Attribute("ID")?.Value
                          ?? root?.Attribute("FunctionId")?.Value
                          ?? root?.Attribute("id")?.Value;
-
                 return Guid.TryParse(idStr, out var g) ? g : Guid.Empty;
             }
             catch { return Guid.Empty; }
         }
 
-        private static bool EnsureCustomNodeLoaded(object dynamoModel, string dyfPath, Guid guid)
+        private static bool EnsureCustomNodeLoaded(object dynamoModel, string dyfPath, Guid guid, Action<string>? log)
         {
             try
             {
                 var cnm = dynamoModel.GetType()
                     .GetProperty("CustomNodeManager", BindingFlags.Public | BindingFlags.Instance)
                     ?.GetValue(dynamoModel);
-                if (cnm == null) return false;
+                if (cnm == null)
+                {
+                    log?.Invoke("[NodeInserter] EnsureCustomNodeLoaded — CustomNodeManager not found");
+                    return false;
+                }
 
-                // Contains(Guid) — verified public method on CustomNodeManager
                 var containsGuid = cnm.GetType().GetMethod("Contains",
                     BindingFlags.Public | BindingFlags.Instance,
                     null, new[] { typeof(Guid) }, null);
                 if (containsGuid?.Invoke(cnm, new object[] { guid }) is true)
+                {
+                    log?.Invoke($"[NodeInserter] EnsureCustomNodeLoaded — already registered, guid={guid}");
                     return true;
+                }
 
-                // AddUninitializedCustomNode(string file, bool isTestMode, out CustomNodeInfo info)
-                // — verified public method; loads the DYF and registers it.
                 var addMethod = cnm.GetType().GetMethod(
                     "AddUninitializedCustomNode",
                     BindingFlags.Public | BindingFlags.Instance);
+                log?.Invoke($"[NodeInserter] EnsureCustomNodeLoaded — AddUninitializedCustomNode found={addMethod != null}");
                 if (addMethod != null)
                 {
                     var args = new object?[] { dyfPath, false, null };
                     try
                     {
                         var ok = addMethod.Invoke(cnm, args) as bool? ?? false;
+                        log?.Invoke($"[NodeInserter] EnsureCustomNodeLoaded — AddUninitializedCustomNode returned={ok}");
                         if (ok) return true;
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        log?.Invoke($"[NodeInserter] EnsureCustomNodeLoaded — AddUninitializedCustomNode threw: {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
 
                 return false;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                log?.Invoke($"[NodeInserter] EnsureCustomNodeLoaded EXCEPTION — {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
         }
 
         // ── Shared Dynamo command helpers ─────────────────────────────────────
@@ -338,55 +507,86 @@ namespace DynamoCopilot.GraphInterop
             object dynamoModel,
             object workspace,
             string nodeTypeName,
-            double x = 0,
-            double y = 0)
+            double x,
+            double y,
+            Action<string>? log)
         {
             try
             {
                 var cmdType = FindType("Dynamo.Models.DynamoModel+CreateNodeCommand");
-                if (cmdType == null) return null;
+                if (cmdType == null)
+                {
+                    log?.Invoke("[NodeInserter] ExecuteCreateNode — CreateNodeCommand type not found in AppDomain");
+                    return null;
+                }
 
-                // CreateNodeCommand(string nodeId, string nodeName,
-                //                   double x, double y,
-                //                   bool defaultPosition, bool transformCoordinates)
                 var ctor = cmdType.GetConstructor(new[]
                 {
                     typeof(string), typeof(string),
                     typeof(double), typeof(double),
                     typeof(bool),   typeof(bool)
                 });
-                if (ctor == null) return null;
+                if (ctor == null)
+                {
+                    log?.Invoke("[NodeInserter] ExecuteCreateNode — matching CreateNodeCommand constructor not found");
+                    return null;
+                }
 
                 var newGuid = Guid.NewGuid().ToString();
-                // defaultPosition=false + explicit coordinates places the node at canvas center.
-                var cmd     = ctor.Invoke(new object[]
-                    { newGuid, nodeTypeName, x, y, false, false });
+                log?.Invoke($"[NodeInserter] ExecuteCreateNode — firing CreateNodeCommand(nodeId={newGuid}, nodeName='{nodeTypeName}', x={x}, y={y})");
+                var cmd = ctor.Invoke(new object[] { newGuid, nodeTypeName, x, y, false, false });
 
                 var executeMethod = dynamoModel.GetType()
                     .GetMethod("ExecuteCommand", BindingFlags.Public | BindingFlags.Instance);
-                executeMethod?.Invoke(dynamoModel, new[] { cmd });
+                if (executeMethod == null)
+                {
+                    log?.Invoke("[NodeInserter] ExecuteCreateNode — ExecuteCommand method not found on model");
+                    return null;
+                }
 
-                // Locate the created node by its GUID
+                executeMethod.Invoke(dynamoModel, new[] { cmd });
+                log?.Invoke("[NodeInserter] ExecuteCreateNode — ExecuteCommand returned, scanning workspace.Nodes for GUID match");
+
                 var nodesEnumerable = workspace.GetType()
                     .GetProperty("Nodes", BindingFlags.Public | BindingFlags.Instance)
                     ?.GetValue(workspace) as System.Collections.IEnumerable;
 
-                if (nodesEnumerable == null) return null;
+                if (nodesEnumerable == null)
+                {
+                    log?.Invoke("[NodeInserter] ExecuteCreateNode — workspace.Nodes is null");
+                    return null;
+                }
 
+                int nodeCount = 0;
                 foreach (var n in nodesEnumerable)
                 {
                     if (n == null) continue;
+                    nodeCount++;
                     var guidVal = n.GetType()
                         .GetProperty("GUID",
                             BindingFlags.Public | BindingFlags.Instance |
                             BindingFlags.FlattenHierarchy)
                         ?.GetValue(n);
-                    if (guidVal?.ToString() == newGuid) return n;
+                    if (guidVal?.ToString() == newGuid)
+                    {
+                        log?.Invoke($"[NodeInserter] ExecuteCreateNode — node found by GUID after scanning {nodeCount} node(s)");
+                        return n;
+                    }
                 }
 
+                log?.Invoke($"[NodeInserter] ExecuteCreateNode — GUID not found after scanning {nodeCount} node(s) — command likely failed silently");
                 return null;
             }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                // TargetInvocationException wraps the real Dynamo exception — unwrap the chain.
+                var e = ex;
+                while (e.InnerException != null) e = e.InnerException;
+                log?.Invoke($"[NodeInserter] ExecuteCreateNode EXCEPTION — outer={ex.GetType().Name}: {ex.Message}");
+                if (!ReferenceEquals(e, ex))
+                    log?.Invoke($"[NodeInserter] ExecuteCreateNode INNER CAUSE — {e.GetType().Name}: {e.Message}");
+                return null;
+            }
         }
 
         private static Type? FindType(string fullName)

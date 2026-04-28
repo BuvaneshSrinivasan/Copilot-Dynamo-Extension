@@ -25,8 +25,84 @@ src/
 ├── DynamoCopilot.Core/          Shared models + LLM service interfaces (used by Extension)
 ├── DynamoCopilot.Extension/     Dynamo WPF add-in (the UI inside Dynamo)
 ├── DynamoCopilot.GraphInterop/  Reflection wrappers around Dynamo internals
+├── DynamoCopilot.NodeIndexer/   CLI tool — builds nodes.db from package zips/folders
 └── DynamoCopilot.Server/        Cloud backend API ← active development
 ```
+
+---
+
+## Extension — Architecture & Key Design Decisions
+
+### Package State (`PackageStateService`)
+
+`IsInstalled(packageName)` checks **only the currently running Dynamo version's packages folder**, not all versions. A package downloaded in Revit 2025 is not considered installed when running in Revit 2024.
+
+- `_installedCurrentVersion` — packages found under `CurrentVersionPackagesDir` (version-scoped, gates the Download/Insert buttons)
+- `_installed` — all packages across every version (used only for path resolution via `GetPackageFolderPath`)
+- `_paths` — prefers the current-version path when a package exists in multiple versions
+
+**Do not revert to checking `_installed` for `IsInstalled`** — it caused the Download button to be disabled in the wrong Dynamo version.
+
+---
+
+### Node Insertion (`GraphNodeInserter`)
+
+All insertion goes through `InsertNode(model, nodeName, packageName, nodeType, packageFolderPath, x, y, log)`.
+
+The `log` parameter is `Action<string>?` — pass `CopilotLogger.Log` from the Extension call site. `GraphInterop` has no reference to `Extension` so it cannot call `CopilotLogger` directly.
+
+**ZeroTouch insertion flow:**
+
+1. `ResolveCreationName` scans loaded assemblies from the package's `bin/` folder and returns `type.Name + "." + method.Name` — **simple class name, no namespace**.
+   - This must match `FunctionDescriptor.QualifiedName = ClassName + "." + UserFriendlyName` which is the dictionary key in `LibraryServices` (Dynamo source: `FunctionDescriptor.cs:417`).
+   - Using `type.FullName` (with namespace) adds extra segments and breaks `LibraryServices.CanbeResolvedTo` which requires the search term to have ≤ segments than the key (`LibraryServices.cs:511`).
+
+2. `TryResolveMangledName` queries `DynamoModel.LibraryServices` (NonPublic property) to promote from `ClassName.Method` to the exact `MangledName = ClassName.Method@T1,T2` needed for overloaded nodes.
+   - Uses `GetFunctionDescriptor(string)` first, then `GetAllFunctionDescriptors` for overloads (`FunctionGroup.cs:71`).
+
+3. `ExecuteCreateNode` fires `DynamoModel.CreateNodeCommand` via reflection. Node creation success is confirmed by finding the new GUID in `workspace.Nodes`.
+
+**DYF insertion flow:**
+- Finds `.dyf` file by simple node name, parses GUID from XML, calls `CustomNodeManager.AddUninitializedCustomNode`, then `CreateNodeCommand` with the GUID string.
+
+**Critical**: `CanInsert` is gated on `IsInstalled` (disk presence), NOT on whether the node actually exists in Dynamo's runtime `LibraryServices`. If a node name in our index doesn't exist in the installed package version, Insert will fail with Dynamo's own "Could not create node" exception.
+
+---
+
+### Node Index (`nodes.db`)
+
+- Location: `%AppData%\DynamoCopilot\nodes.db`
+- Hosted on GitHub Releases `v1.0.0` as a release asset — the installer downloads it from there.
+- Built by `DynamoCopilot.NodeIndexer` CLI tool.
+- **~186 MB**, 38,188 nodes from 2,878 packages.
+
+**Rebuilding nodes.db:**
+```
+dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- \
+  --packages "C:\Users\BHSS\Downloads\Mass Search\Unpacked" \
+  --sqlite   "%AppData%\DynamoCopilot\nodes.db" \
+  --model    "%AppData%\DynamoCopilot\models\model.onnx" \
+  --vocab    "%AppData%\DynamoCopilot\models\vocab.txt"
+```
+
+After rebuilding, upload to the GitHub release:
+```
+gh release upload v1.0.0 assets/nodes.db --repo BuvaneshSrinivasan/Copilot-Dynamo-Extension --clobber
+```
+
+**`node_libraries` filter (critical correctness rule):**
+
+`PackageExtractor` only indexes XML doc files whose base filename matches an assembly listed in `pkg.json`'s `node_libraries` field. This mirrors Dynamo's own `Package.IsNodeLibrary` logic (`Package.cs:459`):
+- `node_libraries` absent → index all DLLs (legacy packages)
+- `node_libraries` present → only index DLLs listed there
+
+**Do not remove this filter.** Without it, packages that bundle third-party DLLs (e.g. Summerisle bundles LunchBox.dll) produce ghost node suggestions — nodes that exist in a bundled DLL but are never exposed by that package in Dynamo.
+
+---
+
+### Logging
+
+`CopilotLogger.Log(string)` appends to `%AppData%\DynamoCopilot\log`. It is in `DynamoCopilot.Extension` — not accessible from `GraphInterop` or `Core`. Pass it as `Action<string>` when crossing project boundaries.
 
 ---
 
@@ -216,6 +292,68 @@ Phase 5 adds: `Admin:ApiKey`
 | Tiers | None (single licence level) | Simplicity for now; add tiers when payment system is added |
 | Admin dashboard | None — use direct DB + admin API endpoints | Fastest path; use TablePlus/DBeaver for ad-hoc queries |
 | Hosting | Railway | Native PostgreSQL addon, reads PORT + DATABASE_URL automatically |
+
+---
+
+## Installer Build
+
+The installer is a self-contained WPF exe (`installer-wpf/`) that bundles the extension DLLs as an embedded zip payload.
+
+### Build command
+```powershell
+.\build-installer.ps1 -Version "1.0.3"
+# Output: installer-wpf\Output\DynamoCopilot-Setup.exe
+```
+
+### Build pipeline (in order)
+1. `dotnet publish` Extension → `installer-wpf\staging-dist\net48\` and `net8.0-windows\`
+2. `dotnet publish` installer WPF exe → `installer-wpf\Output\`
+3. Copies staging dist → `installer-wpf\Output\dist\`
+4. **Obfuscates** the 3 DLLs in a temp staging copy (`obfuscate.ps1`)
+5. Zips the obfuscated staging copy → `payload.zip`
+6. Appends zip to the exe (`append_payload.ps1`)
+
+### Obfuscation one-time setup
+```powershell
+dotnet tool restore   # installs Obfuscar from .config/dotnet-tools.json
+```
+Tool is pinned in `.config/dotnet-tools.json` (Obfuscar 2.2.50).
+
+### What is and isn't obfuscated
+- **Obfuscated:** private/internal members, fields, local variables, string literals (system prompts, server URL) — via `KeepPublicApi=true`
+- **Preserved:** public class/method names (required for Dynamo ViewExtension loading and WPF BAML deserialization)
+- **Stripped:** all `.pdb` files from the shipped DLLs
+
+### Mapping files
+`installer-wpf/obfuscation-mappings/Mapping_*.xml` maps obfuscated names back to originals — needed to decode crash stack traces. These are gitignored; keep them private.
+
+### Key obfuscation constraints
+- `SkipType` and `SkipNamespace` rules inside `<Module>` are silently ignored by Obfuscar 2.2.50 — only `KeepPublicApi` reliably controls what gets renamed
+- `DynamoCopilotViewExtension` must keep its name — Dynamo reads it from `DynamoCopilot_ViewExtensionDefinition.xml`
+- All WPF view/viewmodel type names must be preserved — BAML embeds them as strings
+
+---
+
+## Obfuscation Compatibility Rules
+
+### NEVER use anonymous types with `JsonSerializer`
+Anonymous types (`new { email, password }`) generate compiler-produced generic types. Obfuscar renames their constructor parameter names to `null`. `System.Text.Json` inspects those parameter names when building its type cache — even for serialization — and throws:
+
+> `The deserialization constructor for type 'A.a\`2[...]' contains parameters with null names.`
+
+**Always use `Dictionary<string, T>` instead:**
+
+```csharp
+// WRONG — breaks after obfuscation
+JsonSerializer.Serialize(new { email, password });
+
+// CORRECT
+JsonSerializer.Serialize(new Dictionary<string, string> { ["email"] = email, ["password"] = password });
+```
+
+This applies in: `AuthService`, `ServerLlmService`, `NodeSuggestService`, and all LLM provider services (`GeminiLlmService`, `OpenAiLlmService`, `OllamaLlmService`, `ClaudeLlmService`). All have already been converted.
+
+The JSON wire format is byte-for-byte identical — dictionaries serialize the same way as anonymous types, so no server API changes are needed.
 
 ---
 

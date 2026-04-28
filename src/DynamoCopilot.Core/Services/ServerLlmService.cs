@@ -150,15 +150,15 @@ namespace DynamoCopilot.Core.Services
             string token,
             CancellationToken ct)
         {
-            var msgArray = new List<object>(messages.Count);
+            var msgArray = new List<Dictionary<string, string>>(messages.Count);
             foreach (var m in messages)
-                msgArray.Add(new
+                msgArray.Add(new Dictionary<string, string>
                 {
-                    role    = m.Role.ToString().ToLowerInvariant(),
-                    content = m.Content
+                    ["role"]    = m.Role.ToString().ToLowerInvariant(),
+                    ["content"] = m.Content
                 });
 
-            var body = JsonSerializer.Serialize(new { messages = msgArray });
+            var body = JsonSerializer.Serialize(new Dictionary<string, object> { ["messages"] = msgArray });
 
             // HttpRequestMessage must be re-created for each attempt (cannot be reused
             // after SendAsync disposes the content stream).

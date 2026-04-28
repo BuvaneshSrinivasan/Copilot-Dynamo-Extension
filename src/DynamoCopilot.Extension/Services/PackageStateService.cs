@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 
 namespace DynamoCopilot.Extension.Services
@@ -10,7 +11,11 @@ namespace DynamoCopilot.Extension.Services
     /// </summary>
     public sealed class PackageStateService
     {
+        // All packages found across every Dynamo version folder (used for path resolution).
         private readonly HashSet<string>            _installed
+            = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Packages found only under the currently running Dynamo version's packages folder.
+        private readonly HashSet<string>            _installedCurrentVersion
             = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _paths
             = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -28,8 +33,19 @@ namespace DynamoCopilot.Extension.Services
             Refresh();
         }
 
+        /// <summary>
+        /// Returns true only if the package is installed under the currently running
+        /// Dynamo version's packages folder. A package installed for a different Dynamo
+        /// version (e.g. downloaded in Revit 2025 but now running in Revit 2024) is not
+        /// considered installed.
+        /// </summary>
         public bool IsInstalled(string packageName)
-            => _installed.Contains(packageName);
+        {
+            if (CurrentVersionPackagesDir != null)
+                return _installedCurrentVersion.Contains(packageName);
+            // CurrentVersionPackagesDir unknown — fall back to any-version check.
+            return _installed.Contains(packageName);
+        }
 
         /// <summary>Returns the full path to the package folder, or null if not installed.</summary>
         public string? GetPackageFolderPath(string packageName)
@@ -42,6 +58,7 @@ namespace DynamoCopilot.Extension.Services
         public void Refresh()
         {
             _installed.Clear();
+            _installedCurrentVersion.Clear();
             _paths.Clear();
 
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -75,7 +92,10 @@ namespace DynamoCopilot.Extension.Services
                         if (CurrentVersionPackagesDir != null &&
                             packagesDir.Equals(CurrentVersionPackagesDir,
                                 StringComparison.OrdinalIgnoreCase))
+                        {
+                            _installedCurrentVersion.Add(name);
                             _paths[name] = pkgDir; // current version wins
+                        }
                     }
                 }
             }

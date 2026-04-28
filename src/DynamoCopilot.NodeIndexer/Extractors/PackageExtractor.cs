@@ -68,6 +68,8 @@ public static class PackageExtractor
             {
                 foreach (var xmlFile in Directory.EnumerateFiles(binDir, "*.xml"))
                 {
+                    var baseName = Path.GetFileNameWithoutExtension(xmlFile);
+                    if (!IsNodeLibraryXml(pkg.NodeLibraries, baseName)) continue;
                     var xml = ReadFileAsString(xmlFile);
                     if (xml == null) continue;
                     var xmlNodes = XmlDocParser.Parse(xml, pkg.Name, pkg.Description ?? "", pkg.Keywords);
@@ -120,6 +122,8 @@ public static class PackageExtractor
 
         foreach (var xmlEntry in xmlDocEntries)
         {
+            var baseName = Path.GetFileNameWithoutExtension(xmlEntry.Name);
+            if (!IsNodeLibraryXml(pkg.NodeLibraries, baseName)) continue;
             var xml = ReadEntryAsString(xmlEntry);
             if (xml == null) continue;
 
@@ -138,9 +142,9 @@ public static class PackageExtractor
             using var doc = JsonDocument.Parse(stream);
             var root = doc.RootElement;
 
-            var name = GetString(root, "name");
+            var name        = GetString(root, "name");
             var description = GetString(root, "description");
-            var keywords = root.TryGetProperty("keywords", out var kw) && kw.ValueKind == JsonValueKind.Array
+            var keywords    = root.TryGetProperty("keywords", out var kw) && kw.ValueKind == JsonValueKind.Array
                 ? kw.EnumerateArray()
                     .Where(k => k.ValueKind == JsonValueKind.String)
                     .Select(k => k.GetString() ?? "")
@@ -148,11 +152,21 @@ public static class PackageExtractor
                     .ToArray()
                 : [];
 
-            return new PkgInfo(name, description, keywords);
+            // node_libraries absent → null (legacy; treat all DLLs as node libraries, matching Dynamo behaviour)
+            // node_libraries present but empty → empty array (package has no node libraries)
+            string[]? nodeLibraries = null;
+            if (root.TryGetProperty("node_libraries", out var nl) && nl.ValueKind == JsonValueKind.Array)
+                nodeLibraries = nl.EnumerateArray()
+                    .Where(e => e.ValueKind == JsonValueKind.String)
+                    .Select(e => e.GetString() ?? "")
+                    .Where(e => !string.IsNullOrWhiteSpace(e))
+                    .ToArray();
+
+            return new PkgInfo(name, description, keywords, nodeLibraries);
         }
         catch
         {
-            return new PkgInfo(null, null, []);
+            return new PkgInfo(null, null, [], null);
         }
     }
 
@@ -189,9 +203,17 @@ public static class PackageExtractor
                     .ToArray()
                 : [];
 
-            return new PkgInfo(name, description, keywords);
+            string[]? nodeLibraries = null;
+            if (root.TryGetProperty("node_libraries", out var nl) && nl.ValueKind == JsonValueKind.Array)
+                nodeLibraries = nl.EnumerateArray()
+                    .Where(e => e.ValueKind == JsonValueKind.String)
+                    .Select(e => e.GetString() ?? "")
+                    .Where(e => !string.IsNullOrWhiteSpace(e))
+                    .ToArray();
+
+            return new PkgInfo(name, description, keywords, nodeLibraries);
         }
-        catch { return new PkgInfo(null, null, []); }
+        catch { return new PkgInfo(null, null, [], null); }
     }
 
     private static string? ReadFileAsString(string filePath)
@@ -210,5 +232,29 @@ public static class PackageExtractor
             ? v.GetString()
             : null;
 
-    private sealed record PkgInfo(string? Name, string? Description, string[] Keywords);
+    /// <summary>
+    /// Returns true when an XML doc file should be indexed for this package.
+    /// Mirrors Dynamo's Package.IsNodeLibrary logic (Package.cs:459-491):
+    ///   - nodeLibraries null  → legacy package, index everything
+    ///   - nodeLibraries empty → package has no node libraries, skip all
+    ///   - otherwise           → only index if the DLL simple name is listed
+    /// The xmlFileBaseName is the filename without extension (e.g. "LunchBox").
+    /// Each entry in nodeLibraries is an AssemblyFullName string; we match on simple name.
+    /// </summary>
+    private static bool IsNodeLibraryXml(string[] ? nodeLibraries, string xmlFileBaseName)
+    {
+        if (nodeLibraries == null) return true;
+        foreach (var entry in nodeLibraries)
+        {
+            // entry format: "AssemblySimpleName, Version=x.x, Culture=..., PublicKeyToken=..."
+            var simpleName = entry.Contains(',') ? entry[..entry.IndexOf(',')].Trim() : entry.Trim();
+            if (simpleName.Equals(xmlFileBaseName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    // node_libraries is the list from pkg.json — only DLLs named here are Dynamo node libraries.
+    // Null means the field was absent (legacy packages), which Dynamo treats as "all DLLs are node libraries".
+    private sealed record PkgInfo(string? Name, string? Description, string[] Keywords, string[]? NodeLibraries);
 }

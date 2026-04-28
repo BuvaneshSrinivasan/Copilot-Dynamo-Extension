@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "obfuscar.globaltools": {
+      "version": "2.2.50",
+      "commands": [
+        "obfuscar.console"
+      ]
+    }
+  }
+}

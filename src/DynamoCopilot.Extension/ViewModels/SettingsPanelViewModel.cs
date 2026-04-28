@@ -63,12 +63,14 @@ namespace DynamoCopilot.Extension.ViewModels
                 // Restore working state for the new provider
                 if (_workingProviders.TryGetValue(value.ToString(), out var state))
                 {
-                    _modelName = state.Model;
+                    _modelName = string.IsNullOrWhiteSpace(state.Model)
+                        ? DynamoCopilotSettings.DefaultModelFor(value)
+                        : state.Model;
                     _apiKey    = value == AiProvider.Ollama ? string.Empty : state.ApiKey;
                 }
                 else
                 {
-                    _modelName = string.Empty;
+                    _modelName = DynamoCopilotSettings.DefaultModelFor(value);
                     _apiKey    = string.Empty;
                 }
 
@@ -260,8 +262,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private void ResetModel()
         {
-            ModelName = string.Empty;
-            OnPropertyChanged(nameof(ModelPlaceholder));
+            ModelName = DynamoCopilotSettings.DefaultModelFor(_selectedProvider);
         }
 
         // ── Events ────────────────────────────────────────────────────────────
@@ -291,7 +292,9 @@ namespace DynamoCopilot.Extension.ViewModels
             // Active provider's working values
             if (_workingProviders.TryGetValue(_selectedProvider.ToString(), out var active))
             {
-                _modelName = active.Model;
+                _modelName = string.IsNullOrWhiteSpace(active.Model)
+                    ? DynamoCopilotSettings.DefaultModelFor(_selectedProvider)
+                    : active.Model;
                 _apiKey    = _selectedProvider == AiProvider.Ollama ? string.Empty : active.ApiKey;
             }
         }

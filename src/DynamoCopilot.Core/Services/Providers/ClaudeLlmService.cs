@@ -48,9 +48,8 @@ namespace DynamoCopilot.Core.Services.Providers
             IReadOnlyList<ChatMessage> messages,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            // Claude separates system prompt from conversation turns
             string? systemText = null;
-            var turns = new List<object>();
+            var turns = new List<Dictionary<string, string>>();
 
             foreach (var m in messages)
             {
@@ -59,18 +58,24 @@ namespace DynamoCopilot.Core.Services.Providers
                     systemText = m.Content;
                     continue;
                 }
-                turns.Add(new
+                turns.Add(new Dictionary<string, string>
                 {
-                    role    = m.Role == ChatRole.User ? "user" : "assistant",
-                    content = m.Content
+                    ["role"]    = m.Role == ChatRole.User ? "user" : "assistant",
+                    ["content"] = m.Content
                 });
             }
 
-            var bodyObj = systemText != null
-                ? (object)new { model = _model, max_tokens = 8192, stream = true, system = systemText, messages = turns }
-                : new { model = _model, max_tokens = 8192, stream = true, messages = turns };
+            var bodyDict = new Dictionary<string, object>
+            {
+                ["model"]      = _model,
+                ["max_tokens"] = 8192,
+                ["stream"]     = true,
+                ["messages"]   = turns
+            };
+            if (systemText != null)
+                bodyDict["system"] = systemText;
 
-            var body = JsonSerializer.Serialize(bodyObj);
+            var body = JsonSerializer.Serialize(bodyDict);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint);
             request.Headers.Add("x-api-key", _apiKey);
@@ -90,8 +95,6 @@ namespace DynamoCopilot.Core.Services.Providers
             using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new System.IO.StreamReader(stream);
 
-            // Claude SSE: event lines followed by data lines
-            // We only care about content_block_delta events with text_delta type
             while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
             {
                 var line = await reader.ReadLineAsync();

@@ -49,9 +49,8 @@ namespace DynamoCopilot.Core.Services.Providers
         {
             var url = $"{BaseUrl}/{_model}:streamGenerateContent?alt=sse&key={_apiKey}";
 
-            // Split system message from conversation turns
             string? systemText = null;
-            var contents = new List<object>();
+            var contents = new List<Dictionary<string, object?>>();
 
             foreach (var m in messages)
             {
@@ -60,27 +59,30 @@ namespace DynamoCopilot.Core.Services.Providers
                     systemText = m.Content;
                     continue;
                 }
-                contents.Add(new
+                contents.Add(new Dictionary<string, object?>
                 {
-                    role  = m.Role == ChatRole.User ? "user" : "model",
-                    parts = new[] { new { text = m.Content } }
+                    ["role"]  = m.Role == ChatRole.User ? "user" : "model",
+                    ["parts"] = new[] { new Dictionary<string, string> { ["text"] = m.Content } }
                 });
             }
 
-            var bodyObj = systemText != null
-                ? (object)new
-                {
-                    systemInstruction = new { parts = new[] { new { text = systemText } } },
-                    contents,
-                    generationConfig  = new { thinkingConfig = new { thinkingBudget = 0 } }
-                }
-                : new
-                {
-                    contents,
-                    generationConfig = new { thinkingConfig = new { thinkingBudget = 0 } }
-                };
+            var generationConfig = new Dictionary<string, object>
+            {
+                ["thinkingConfig"] = new Dictionary<string, int> { ["thinkingBudget"] = 0 }
+            };
 
-            var body = JsonSerializer.Serialize(bodyObj);
+            var bodyDict = new Dictionary<string, object?>();
+            if (systemText != null)
+            {
+                bodyDict["systemInstruction"] = new Dictionary<string, object>
+                {
+                    ["parts"] = new[] { new Dictionary<string, string> { ["text"] = systemText } }
+                };
+            }
+            bodyDict["contents"]         = contents;
+            bodyDict["generationConfig"] = generationConfig;
+
+            var body = JsonSerializer.Serialize(bodyDict);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Content  = new StringContent(body, Encoding.UTF8, "application/json");

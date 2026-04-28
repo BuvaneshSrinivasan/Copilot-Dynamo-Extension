@@ -1,3 +1,6 @@
+# Obfuscar mapping files — contain original symbol names, keep private
+installer-wpf/obfuscation-mappings/
+
 # Build outputs
 bin/
 obj/

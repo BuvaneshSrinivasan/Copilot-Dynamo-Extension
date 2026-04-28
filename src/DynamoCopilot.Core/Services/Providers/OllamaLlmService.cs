@@ -41,19 +41,19 @@ namespace DynamoCopilot.Core.Services.Providers
             IReadOnlyList<ChatMessage> messages,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            var msgList = new List<object>(messages.Count);
+            var msgList = new List<Dictionary<string, string>>(messages.Count);
             foreach (var m in messages)
-                msgList.Add(new
+                msgList.Add(new Dictionary<string, string>
                 {
-                    role    = RoleString(m.Role),
-                    content = m.Content
+                    ["role"]    = RoleString(m.Role),
+                    ["content"] = m.Content
                 });
 
-            var body = JsonSerializer.Serialize(new
+            var body = JsonSerializer.Serialize(new Dictionary<string, object>
             {
-                model    = _model,
-                stream   = true,
-                messages = msgList
+                ["model"]    = _model,
+                ["stream"]   = true,
+                ["messages"] = msgList
             });
 
             using var request = new HttpRequestMessage(
@@ -73,7 +73,6 @@ namespace DynamoCopilot.Core.Services.Providers
             using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new System.IO.StreamReader(stream);
 
-            // Ollama streams NDJSON: one JSON object per line
             while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
             {
                 var line = await reader.ReadLineAsync();
