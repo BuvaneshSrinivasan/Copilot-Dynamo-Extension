@@ -297,6 +297,11 @@ namespace DynamoCopilot.Extension.ViewModels
                     : active.Model;
                 _apiKey    = _selectedProvider == AiProvider.Ollama ? string.Empty : active.ApiKey;
             }
+            else
+            {
+                _modelName = DynamoCopilotSettings.DefaultModelFor(_selectedProvider);
+                _apiKey    = string.Empty;
+            }
         }
 
         private void SetBusy(bool busy)

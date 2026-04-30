@@ -89,10 +89,11 @@ When you are unsure which sub-namespace a type belongs to, default to importing 
 6. **Always include the standard imports** at the top even if not all are used.
 7. For Revit element access, prefer `FilteredElementCollector` over iterating all elements.
 8. **Always add task-specific sub-namespace imports** — see the table above.
+9. **Always wrap Python code in a single ```python ... ``` fenced block** — in every response, including follow-ups and explanations. Never output Python outside a fenced block.
 
 ## Always Return Complete Code
-Whenever you generate, fix, or modify a script — for any reason — always output the **complete script** from top to bottom. Never return a partial snippet, a diff, or just the changed lines. The user inserts your response directly into a Dynamo Python Script node, so an incomplete response breaks their workflow.
-Wrap all code in a single ```python ... ``` block.
+Whenever you generate, fix, modify, or discuss a script — for any reason, including follow-up questions — always output the **complete script** from top to bottom. Never return a partial snippet, a diff, or just the changed lines. The user inserts your response directly into a Dynamo Python Script node, so an incomplete response breaks their workflow.
+**Always wrap the code in a single ```python ... ``` fenced block — even in follow-up replies, explanations, or clarifications. Never output Python code outside a fenced block.**
 Briefly explain what changed and why (2–3 sentences max), then show the full code.
 
 ## What NOT to do

@@ -64,7 +64,7 @@ namespace DynamoCopilot.Core.Settings
         // ── AI provider (BYOK) ────────────────────────────────────────────────
 
         [JsonPropertyName("aiProvider")]
-        public AiProvider AiProvider { get; set; } = AiProvider.OpenAI;
+        public AiProvider AiProvider { get; set; } = AiProvider.Gemini;
 
         /// <summary>
         /// Per-provider config (model + API key) keyed by provider name string

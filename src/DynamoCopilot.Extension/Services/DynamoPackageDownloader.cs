@@ -551,7 +551,7 @@ namespace DynamoCopilot.Extension.Services
                     .GetProperty("LibraryServices", BindingFlags.Public | BindingFlags.Instance)
                     ?.GetValue(model);
                 Log($"TryManualLibraryRefresh: LibraryServices found={libServices != null}");
-                if (libServices == null) { Debugger.Launch(); return; }
+                if (libServices == null)  return; 
 
                 // LibraryServices.GetFunctionGroups(string library) — internal
                 var getFunctionGroups = libServices.GetType()
@@ -576,7 +576,7 @@ namespace DynamoCopilot.Extension.Services
                 {
                     Log($"TryManualLibraryRefresh: GetFunctionGroups({path})");
                     var funcGroups = getFunctionGroups.Invoke(libServices, new object[] { path });
-                    if (funcGroups == null) { Log($"  → GetFunctionGroups returned null for {path}"); Debugger.Launch(); continue; }
+                    if (funcGroups == null) { Log($"  → GetFunctionGroups returned null for {path}"); continue; }
 
                     // Count how many groups were returned
                     int groupCount = 0;

@@ -277,11 +277,12 @@ namespace DynamoCopilot.GraphInterop
                         log?.Invoke("[NodeInserter] DYF FAIL — GUID is empty");
                         return false;
                     }
-                    if (!EnsureCustomNodeLoaded(dynamoModel, dyfPath, guid, log))
-                    {
-                        log?.Invoke("[NodeInserter] DYF FAIL — EnsureCustomNodeLoaded returned false");
-                        return false;
-                    }
+                    // Best-effort: try to register the DYF via our reflection path.
+                    // We do NOT abort on false — DynamoModel.GetNodeFromCommand accesses
+                    // CustomNodeManager internally when processing CreateNodeCommand(guid),
+                    // so installed-at-startup packages work even if we can't reach it.
+                    var registered = EnsureCustomNodeLoaded(dynamoModel, dyfPath, guid, log);
+                    log?.Invoke($"[NodeInserter] DYF — EnsureCustomNodeLoaded={registered}, proceeding to ExecuteCreateNode regardless");
                 }
                 else
                 {
@@ -320,11 +321,12 @@ namespace DynamoCopilot.GraphInterop
             try
             {
                 var cnm = dynamoModel.GetType()
-                    .GetProperty("CustomNodeManager", BindingFlags.Public | BindingFlags.Instance)
+                    .GetProperty("CustomNodeManager",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
                     ?.GetValue(dynamoModel);
                 if (cnm == null)
                 {
-                    log?.Invoke("[NodeInserter] FindCustomNodeGuidByName — CustomNodeManager not found");
+                    log?.Invoke("[NodeInserter] FindCustomNodeGuidByName — CustomNodeManager not found (tried Public+NonPublic)");
                     return Guid.Empty;
                 }
 
@@ -448,12 +450,14 @@ namespace DynamoCopilot.GraphInterop
         {
             try
             {
+                // CustomNodeManager may be internal on DynamoModel (base of RevitDynamoModel).
                 var cnm = dynamoModel.GetType()
-                    .GetProperty("CustomNodeManager", BindingFlags.Public | BindingFlags.Instance)
+                    .GetProperty("CustomNodeManager",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
                     ?.GetValue(dynamoModel);
                 if (cnm == null)
                 {
-                    log?.Invoke("[NodeInserter] EnsureCustomNodeLoaded — CustomNodeManager not found");
+                    log?.Invoke("[NodeInserter] EnsureCustomNodeLoaded — CustomNodeManager not found (tried Public+NonPublic)");
                     return false;
                 }
 

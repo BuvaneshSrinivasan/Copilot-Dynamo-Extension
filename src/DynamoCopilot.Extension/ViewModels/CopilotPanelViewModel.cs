@@ -490,7 +490,8 @@ namespace DynamoCopilot.Extension.ViewModels
             if (info == null) return;
 
             UserEmail       = info.Email;
-            TokensUsed      = info.DailyTokenCount;
+            if (info.DailyTokenCount > 0 || TokensUsed == 0)
+                TokensUsed  = info.DailyTokenCount;
             IsLicenceActive = info.IsActive && !info.LicenseExpired;
             LicenseEndDate  = info.LicenseEndDate;
         }
@@ -503,6 +504,7 @@ namespace DynamoCopilot.Extension.ViewModels
             CopilotLogger.Log("SendMessageAsync", $"user={_authService.Email}  text={Truncate(userText, 120)}");
             try
             {
+                await RefreshUserInfoAsync();
                 await SendMessageCoreAsync(userText);
             }
             catch (Exception ex)
@@ -528,6 +530,13 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private async Task SendMessageCoreAsync(string userText)
         {
+            if (IsLicenseExpired)
+            {
+                StatusMessage = "Your licence has expired. Please contact support to renew.";
+                IsStreaming   = false;
+                return;
+            }
+
             // Feature 1: !direct prefix bypasses spec classification
             bool bypassSpec = userText.StartsWith("!direct ", StringComparison.Ordinal);
             if (bypassSpec) userText = userText.Substring("!direct ".Length).Trim();
@@ -591,17 +600,22 @@ namespace DynamoCopilot.Extension.ViewModels
                 // Chat response from classifier — show it directly without another LLM call
                 if (!string.IsNullOrWhiteSpace(classification.ChatText))
                 {
-                    CopilotLogger.Log("Classify", "returning classifier chat response");
+                    var chatText   = classification.ChatText!;
+                    var fencedText = EnsureCodeFenced(chatText);
+                    var code       = ExtractFirstCodeBlock(fencedText);
+                    CopilotLogger.Log("Classify", $"returning classifier chat response  codeBlock={code != null}");
                     var chatVm = new ChatMessageViewModel
                     {
-                        Role    = ChatRole.Assistant,
-                        Content = classification.ChatText
+                        Role        = ChatRole.Assistant,
+                        Content     = code != null ? StripCodeBlock(fencedText) : chatText,
+                        CodeSnippet = code
                     };
                     AddMessage(chatVm);
                     _currentSession.Messages.Add(new ChatMessage
                     {
-                        Role    = ChatRole.Assistant,
-                        Content = classification.ChatText
+                        Role        = ChatRole.Assistant,
+                        Content     = chatText,
+                        CodeSnippet = code
                     });
                     try { _historyService.Save(_currentSession); } catch { }
                     IsStreaming = false;
@@ -639,6 +653,13 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private async Task ConfirmSpecAsync(CodeSpecification spec)
         {
+            await RefreshUserInfoAsync();
+            if (IsLicenseExpired)
+            {
+                StatusMessage = "Your licence has expired. Please contact support to renew.";
+                return;
+            }
+
             CopilotLogger.Log("ConfirmSpec", $"steps={spec.Steps.Count}  questions={spec.Questions.Count}");
             _specState.Clear();
 
@@ -765,9 +786,18 @@ namespace DynamoCopilot.Extension.ViewModels
 
             CopilotLogger.Log("Streaming", $"complete  tokens={tokenCount}  chars={contentBuilder.Length}");
 
-            var fullContent = contentBuilder.ToString();
+            var rawContent  = contentBuilder.ToString();
+            var fullContent = EnsureCodeFenced(rawContent);
             var codeSnippet = ExtractFirstCodeBlock(fullContent);
-            CopilotLogger.Log("Streaming", $"codeBlock={codeSnippet != null}  codeChars={codeSnippet?.Length ?? 0}");
+
+            // Diagnostic: log fence detection detail so we can identify regex-mismatch causes
+            bool dbgHasFence       = rawContent.Contains("```");
+            bool dbgHasPythonFence = rawContent.Contains("```python");
+            bool dbgHasNewlineFence= Regex.IsMatch(rawContent, @"```\w*\s*\r?\n", RegexOptions.IgnoreCase);
+            bool dbgHasCloseFence  = Regex.IsMatch(rawContent, @"\r?\n```", RegexOptions.IgnoreCase);
+            CopilotLogger.Log("Streaming", $"codeBlock={codeSnippet != null}  codeChars={codeSnippet?.Length ?? 0}  " +
+                $"hasFence={dbgHasFence}  hasPythonFence={dbgHasPythonFence}  hasNewlineFence={dbgHasNewlineFence}  hasCloseFence={dbgHasCloseFence}  " +
+                $"rawLen={rawContent.Length}  fenced={rawContent != fullContent}");
 
             // Feature 2: validate + auto-fix Revit enum values in generated code
             if (codeSnippet != null && _settings.EnableCodeValidation)
@@ -794,6 +824,9 @@ namespace DynamoCopilot.Extension.ViewModels
             assistantVm.CodeSnippet = codeSnippet;
             assistantVm.IsStreaming = false;
             IsStreaming = false;
+
+            // Estimate tokens for this exchange (~4 chars per token)
+            TokensUsed += Math.Max(1, (userText.Length + contentBuilder.Length) / 4);
             CopilotLogger.Log("Streaming", "UI updated — done");
 
             _currentSession.Messages.Add(new ChatMessage
@@ -975,6 +1008,13 @@ namespace DynamoCopilot.Extension.ViewModels
         public async Task SearchNodesAsync(string query)
         {
             if (string.IsNullOrWhiteSpace(query) || _isSearchingNodes) return;
+
+            await RefreshUserInfoAsync();
+            if (IsLicenseExpired)
+            {
+                StatusMessage = "Your licence has expired. Please contact support to renew.";
+                return;
+            }
 
             IsSearchingNodes = true;
             foreach (var card in NodeSuggestions) card.Dispose();
@@ -1290,6 +1330,93 @@ namespace DynamoCopilot.Extension.ViewModels
                 string.Empty,
                 RegexOptions.Singleline | RegexOptions.IgnoreCase).Trim();
             return string.IsNullOrWhiteSpace(result) ? string.Empty : result;
+        }
+
+        // Dynamo Python patterns that never appear in prose
+        private static readonly Regex _dynaPythonAnchor = new(
+            @"^(import clr\b|clr\.AddReference|from Autodesk\.Revit)",
+            RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// If the AI returned Python code without fenced backticks, wraps the detected
+        /// code region in ```python fences so the normal extraction path can find it.
+        /// Called before ExtractFirstCodeBlock / StripCodeBlock.
+        /// </summary>
+        private static string EnsureCodeFenced(string response)
+        {
+            // Already has a fenced block — nothing to do
+            if (Regex.IsMatch(response, @"```\w*\s*\r?\n", RegexOptions.IgnoreCase))
+                return response;
+
+            // No Dynamo Python anchors — no code to wrap
+            if (!_dynaPythonAnchor.IsMatch(response))
+                return response;
+
+            var lines = response.Split('\n');
+            int codeStart = -1;
+            int codeEnd   = -1;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (IsPythonCodeLine(lines[i]))
+                {
+                    if (codeStart == -1) codeStart = i;
+                    codeEnd = i;
+                }
+            }
+
+            if (codeStart == -1) return response;
+
+            // Extend codeEnd forward: skip blank lines, absorb any subsequent code lines
+            for (int i = codeEnd + 1; i < lines.Length; i++)
+            {
+                var trimmed = lines[i].Trim();
+                if (trimmed.Length == 0) continue;          // blank — peek further
+                if (IsPythonCodeLine(lines[i])) codeEnd = i; // more code — extend
+                else break;                                  // prose — stop
+            }
+
+            var sb = new StringBuilder();
+
+            if (codeStart > 0)
+            {
+                sb.Append(string.Join("\n", lines, 0, codeStart).TrimEnd());
+                sb.Append("\n\n");
+            }
+
+            sb.AppendLine("```python");
+            sb.AppendLine(string.Join("\n", lines, codeStart, codeEnd - codeStart + 1).Trim());
+            sb.Append("```");
+
+            if (codeEnd < lines.Length - 1)
+            {
+                var after = string.Join("\n", lines, codeEnd + 1, lines.Length - codeEnd - 1).TrimStart();
+                if (!string.IsNullOrWhiteSpace(after))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine();
+                    sb.Append(after);
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static bool IsPythonCodeLine(string line)
+        {
+            var t = line.TrimStart();
+            if (t.Length == 0) return false;
+            return t.StartsWith("import ")
+                || t.StartsWith("from ")
+                || t.StartsWith("clr.")
+                || t.StartsWith("def ")
+                || t.StartsWith("class ")
+                || t.StartsWith("OUT ")
+                || t.StartsWith("OUT=")
+                || t.StartsWith("IN[")
+                || t.StartsWith("TransactionManager")
+                || t.StartsWith("DocumentManager")
+                || (line.Length > 0 && (line[0] == ' ' || line[0] == '\t')); // indented line
         }
 
         private static string Truncate(string s, int max)
