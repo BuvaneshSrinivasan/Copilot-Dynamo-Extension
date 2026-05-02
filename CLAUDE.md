@@ -6,7 +6,10 @@ This file is read by Claude Code at the start of every session. Keep it updated.
 
 ## What This Project Is
 
-The DynamoCopilot **extension** lets Autodesk Dynamo/Revit users generate and fix Python code using AI, directly inside the Dynamo UI.
+The project ships **two Dynamo sidebar extensions** under a shared "BimEra" menu tab, both compiled into a single DLL (`DynamoCopilot.Extension.dll`):
+
+1. **Dynamo Co-pilot** — AI chat for generating and fixing Dynamo Python (Revit API) code
+2. **Suggest Nodes** — local vector search over 78,000+ indexed Dynamo package nodes
 
 The **server** (`src/DynamoCopilot.Server/`) is the cloud backend that:
 1. Authenticates users (email + password, JWT tokens)
@@ -31,7 +34,94 @@ src/
 
 ---
 
+## Extension — Two-Extension Architecture
+
+### Overview
+
+Both extensions live in the same `DynamoCopilot.Extension.dll`. Dynamo discovers them through two separate XML manifests placed in its `viewExtensions\` folder:
+
+| Manifest | TypeName | Purpose |
+|----------|----------|---------|
+| `DynamoCopilot_ViewExtensionDefinition.xml` | `DynamoCopilotViewExtension` | Python chat panel |
+| `SuggestNodes_ViewExtensionDefinition.xml` | `SuggestNodesViewExtension` | Node search panel |
+
+### File structure (Extension project)
+
+```
+DynamoCopilot.Extension/
+├── DynamoCopilotViewExtension.cs          IViewExtension — Copilot chat
+├── SuggestNodesViewExtension.cs           IViewExtension — Suggest Nodes
+├── DynamoCopilot_ViewExtensionDefinition.xml
+├── SuggestNodes_ViewExtensionDefinition.xml
+│
+├── ViewModels/
+│   ├── CopilotPanelViewModel.cs           Chat + auth + AI settings + user info
+│   ├── SuggestNodesPanelViewModel.cs      Node search + auth + user info
+│   ├── SettingsPanelViewModel.cs          AI provider config (Copilot only)
+│   ├── NodeSuggestionCardViewModel.cs     Per-card state for node results
+│   ├── SpecCardViewModel.cs               Spec-first feature card
+│   └── ChatMessageViewModel.cs            Per-message display state
+│
+├── Views/
+│   ├── CopilotPanelView.xaml              Chat UI (no node suggest tab)
+│   └── SuggestNodesPanelView.xaml         Search input + cards + user icon
+│
+└── Services/
+    ├── CopilotLogger.cs
+    ├── PackageStateService.cs             Used by Suggest Nodes only
+    └── DynamoPackageDownloader.cs         Used by Suggest Nodes only
+```
+
+### BimEra menu — shared tab, two items
+
+Both extensions call `FindOrCreateBimEraMenu(dynamoMenu.Items, "BimEra")` in their `Loaded()` method. Whichever loads first creates the "BimEra" `MenuItem`; the second finds and reuses it. Result: one "BimEra" top-level menu with two sub-items, load-order independent.
+
+**Do not** let either extension call `loadedParams.dynamoMenu.Items.Add(new MenuItem { Header = "BimEra" })` directly — that creates duplicate top-level entries.
+
+### Panel open/close state
+
+Both extensions track `_panelOpen` via WPF `Loaded`/`Unloaded` events on the view, not in `OnTogglePanel`:
+
+```csharp
+_view.Loaded   += (_, __) => _panelOpen = true;
+_view.Unloaded += (_, __) => _panelOpen = false;
+```
+
+`OnTogglePanel` only calls `AddToExtensionsSideBar` / `CloseExtensioninInSideBar`. This correctly handles the case where the user closes the panel via Dynamo's own X button (not the menu item), which previously left `_panelOpen` stale.
+
+The menu item header never changes — it always shows the extension name.
+
+### Shared authentication
+
+Both extensions use separate `AuthService` instances pointing to the same `tokens.json` on disk (`%AppData%\DynamoCopilot\tokens.json`). In-memory login state is kept in sync via **static events** on `AuthService`:
+
+```csharp
+public static event Action<string>? GlobalLoggedIn;   // fired after tokens saved
+public static event Action?         GlobalLoggedOut;  // fired after tokens deleted
+```
+
+**Login sync flow:**
+1. User logs in via either panel → `AuthService` saves tokens, fires `GlobalLoggedIn`
+2. The *other* VM's `OnGlobalLoggedIn` handler calls `OnAuthSuccess()` if it isn't already logged in
+
+**Logout sync flow:**
+1. User clicks Sign Out in VM-A → VM-A calls `ClearAuthState()` first (sets `IsLoggedIn = false`)
+2. Then calls `_authService.Logout()` → fires `GlobalLoggedOut`
+3. VM-A's handler guard `if (!IsLoggedIn) return` skips (already false) — no double clear
+4. VM-B's handler guard passes → calls `DispatchToUi(ClearAuthState)` → VM-B's UI clears
+
+Both VMs subscribe in their constructor and **unsubscribe in `Shutdown()`** to prevent memory leaks.
+
+---
+
 ## Extension — Architecture & Key Design Decisions
+
+### Copilot vs Suggest Nodes — feature boundary
+
+- **Copilot** (`CopilotPanelViewModel`) — chat only: streaming LLM responses, Python code extraction, Insert/Fix-Error, spec-first flow, AI settings, user info panel
+- **Suggest Nodes** (`SuggestNodesPanelViewModel`) — node search only: ONNX vector search via `LocalNodeSearchService`, node cards with Download/Insert, user icon (top-right) reveals user info flyout
+
+**Node suggestion cards do NOT appear in the Copilot chat.** If the AI mentions a node name in prose, it stays as text — no interactive cards. All node card functionality is isolated to the Suggest Nodes extension.
 
 ### Package State (`PackageStateService`)
 
@@ -292,6 +382,9 @@ Phase 5 adds: `Admin:ApiKey`
 | Tiers | None (single licence level) | Simplicity for now; add tiers when payment system is added |
 | Admin dashboard | None — use direct DB + admin API endpoints | Fastest path; use TablePlus/DBeaver for ad-hoc queries |
 | Hosting | Railway | Native PostgreSQL addon, reads PORT + DATABASE_URL automatically |
+| Two extensions, one DLL | Single DLL, two `IViewExtension` classes | Dynamo requires one XML manifest per extension; single DLL avoids duplicating shared services |
+| Cross-extension auth sync | Static events on `AuthService` | Both extensions share the same AppDomain; static events are the correct in-process signal — no IPC needed |
+| Panel state tracking | WPF `Loaded`/`Unloaded` events | Correctly detects user closing the panel via Dynamo's own X button, not just our menu item |
 
 ---
 
@@ -313,6 +406,23 @@ The installer is a self-contained WPF exe (`installer-wpf/`) that bundles the ex
 5. Zips the obfuscated staging copy → `payload.zip`
 6. Appends zip to the exe (`append_payload.ps1`)
 
+### ViewExtension XML manifests
+
+Two manifests are required in each Dynamo `viewExtensions\` folder:
+
+| File | Template |
+|------|----------|
+| `DynamoCopilot_ViewExtensionDefinition.xml` | `DynamoCopilot_ViewExtensionDefinition.net8.xml.template` |
+| `SuggestNodes_ViewExtensionDefinition.xml` | `SuggestNodes_ViewExtensionDefinition.net8.xml.template` |
+
+(`net48` variants exist for Revit 2024 and below.)
+
+**`build-local.ps1`** generates both XMLs from their templates (replacing `{{APPDATA}}`) and copies both to every detected Dynamo `viewExtensions\` folder. Run as Administrator because the target folders are under `Program Files`.
+
+**`InstallerEngine.cs` `RegisterDynamo()`** writes both XMLs when the installer registers a Dynamo install.
+
+The `SuggestNodes_ViewExtensionDefinition.xml` file is also declared as `<Content CopyToOutputDirectory="PreserveNewest">` in the `.csproj` so it lands in the build output alongside the DLL.
+
 ### Obfuscation one-time setup
 ```powershell
 dotnet tool restore   # installs Obfuscar from .config/dotnet-tools.json
@@ -330,6 +440,7 @@ Tool is pinned in `.config/dotnet-tools.json` (Obfuscar 2.2.50).
 ### Key obfuscation constraints
 - `SkipType` and `SkipNamespace` rules inside `<Module>` are silently ignored by Obfuscar 2.2.50 — only `KeepPublicApi` reliably controls what gets renamed
 - `DynamoCopilotViewExtension` must keep its name — Dynamo reads it from `DynamoCopilot_ViewExtensionDefinition.xml`
+- `SuggestNodesViewExtension` must keep its name — Dynamo reads it from `SuggestNodes_ViewExtensionDefinition.xml`
 - All WPF view/viewmodel type names must be preserved — BAML embeds them as strings
 
 ---

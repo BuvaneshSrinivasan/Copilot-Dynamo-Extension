@@ -124,16 +124,20 @@ function Build-And-Deploy {
     Copy-Item "$PublishDir\*" $Dest -Recurse -Force
     Write-Host "    DLLs  -> $Dest" -ForegroundColor Green
 
-    # Build the XML content (expand {{APPDATA}} to the real path)
+    # Build both XML files (expand {{APPDATA}} to the real path)
     $TemplateName = if ($Tfm -eq "net48") { "net48" } else { "net8" }
-    $Template     = Join-Path $RepoRoot "DynamoCopilot_ViewExtensionDefinition.$TemplateName.xml.template"
-    $XmlContent   = (Get-Content $Template -Raw) -replace '\{\{APPDATA\}\}', $AppData
 
-    # Save a copy in %AppData%\DynamoCopilot\ for reference / manual installs
-    $RefXml = Join-Path $DestBase "DynamoCopilot_ViewExtensionDefinition_$Tfm.xml"
-    Set-Content -Path $RefXml -Value $XmlContent -Encoding UTF8
+    $CopilotTemplate  = Join-Path $RepoRoot "DynamoCopilot_ViewExtensionDefinition.$TemplateName.xml.template"
+    $CopilotXml       = (Get-Content $CopilotTemplate -Raw) -replace '\{\{APPDATA\}\}', $AppData
+    $RefCopilotXml    = Join-Path $DestBase "DynamoCopilot_ViewExtensionDefinition_$Tfm.xml"
+    Set-Content -Path $RefCopilotXml -Value $CopilotXml -Encoding UTF8
 
-    # Copy XML into every matching Dynamo install found on this machine
+    $SuggestTemplate  = Join-Path $RepoRoot "SuggestNodes_ViewExtensionDefinition.$TemplateName.xml.template"
+    $SuggestXml       = (Get-Content $SuggestTemplate -Raw) -replace '\{\{APPDATA\}\}', $AppData
+    $RefSuggestXml    = Join-Path $DestBase "SuggestNodes_ViewExtensionDefinition_$Tfm.xml"
+    Set-Content -Path $RefSuggestXml -Value $SuggestXml -Encoding UTF8
+
+    # Copy both XMLs into every matching Dynamo install found on this machine
     $Found = 0
     $Placed = 0
     foreach ($Entry in $DynamoInstalls.GetEnumerator()) {
@@ -141,24 +145,28 @@ function Build-And-Deploy {
         if (-not (Test-Path $Entry.Key))    { continue }   # Dynamo not installed here
 
         $Found++
-        $XmlDest = Join-Path $Entry.Key "DynamoCopilot_ViewExtensionDefinition.xml"
+        $XmlDest1 = Join-Path $Entry.Key "DynamoCopilot_ViewExtensionDefinition.xml"
+        $XmlDest2 = Join-Path $Entry.Key "SuggestNodes_ViewExtensionDefinition.xml"
         try {
-            Copy-Item $RefXml $XmlDest -Force
-            Write-Host "    XML   -> $XmlDest" -ForegroundColor Green
+            Copy-Item $RefCopilotXml $XmlDest1 -Force
+            Copy-Item $RefSuggestXml $XmlDest2 -Force
+            Write-Host "    XML   -> $XmlDest1" -ForegroundColor Green
+            Write-Host "    XML   -> $XmlDest2" -ForegroundColor Green
             $Placed++
         }
         catch [System.UnauthorizedAccessException] {
-            Write-Warning "Permission denied writing to $XmlDest. Run PowerShell as Administrator or copy the XML manually."
+            Write-Warning "Permission denied writing to $($Entry.Key). Run PowerShell as Administrator or copy the XMLs manually."
         }
         catch {
-            Write-Warning ("Failed to write {0}: {1}" -f $XmlDest, $_)
+            Write-Warning ("Failed to write to {0}: {1}" -f $Entry.Key, $_)
         }
     }
 
     if ($Found -eq 0) {
         Write-Warning "No $Tfm Dynamo install found at the default paths."
-        Write-Host    "    Manually copy this XML into your Dynamo viewExtensions folder:" -ForegroundColor Yellow
-        Write-Host    "    $RefXml" -ForegroundColor Yellow
+        Write-Host    "    Manually copy these XMLs into your Dynamo viewExtensions folder:" -ForegroundColor Yellow
+        Write-Host    "    $RefCopilotXml" -ForegroundColor Yellow
+        Write-Host    "    $RefSuggestXml" -ForegroundColor Yellow
     }
 }
 

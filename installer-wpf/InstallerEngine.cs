@@ -260,7 +260,8 @@ public class InstallerEngine
             if (!Directory.Exists(dir)) continue;
 
             var dllPath = Path.Combine(destBase, tfm, "DynamoCopilot.Extension.dll");
-            var xml = $"""
+
+            var copilotXml = $"""
                 <?xml version="1.0" encoding="utf-8"?>
                 <ViewExtensionDefinition>
                   <AssemblyPath>{dllPath}</AssemblyPath>
@@ -268,7 +269,16 @@ public class InstallerEngine
                 </ViewExtensionDefinition>
                 """;
 
-            File.WriteAllText(Path.Combine(dir, "DynamoCopilot_ViewExtensionDefinition.xml"), xml);
+            var suggestXml = $"""
+                <?xml version="1.0" encoding="utf-8"?>
+                <ViewExtensionDefinition>
+                  <AssemblyPath>{dllPath}</AssemblyPath>
+                  <TypeName>DynamoCopilot.Extension.SuggestNodesViewExtension</TypeName>
+                </ViewExtensionDefinition>
+                """;
+
+            File.WriteAllText(Path.Combine(dir, "DynamoCopilot_ViewExtensionDefinition.xml"), copilotXml);
+            File.WriteAllText(Path.Combine(dir, "SuggestNodes_ViewExtensionDefinition.xml"),  suggestXml);
         }
     }
 }

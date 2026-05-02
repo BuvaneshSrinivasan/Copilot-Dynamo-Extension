@@ -38,6 +38,12 @@ namespace DynamoCopilot.Core.Services
 
         private StoredTokens? _tokens;
 
+        // ── Cross-extension auth state (static — same AppDomain, same DLL) ─────────
+        // Fire-and-forget: VMs subscribe to keep their IsLoggedIn in sync across panels.
+
+        public static event Action<string>? GlobalLoggedIn;
+        public static event Action?         GlobalLoggedOut;
+
         // ── Public state ─────────────────────────────────────────────────────────
 
         public bool HasStoredTokens =>
@@ -206,6 +212,7 @@ namespace DynamoCopilot.Core.Services
 
                 _tokens = tokens;
                 PersistTokens(tokens);
+                GlobalLoggedIn?.Invoke(tokens.Email);
                 return AuthResult.Ok(tokens);
             }
             catch (HttpRequestException)
@@ -305,6 +312,7 @@ namespace DynamoCopilot.Core.Services
             _tokens = null;
             try { if (File.Exists(_tokenFilePath)) File.Delete(_tokenFilePath); }
             catch { }
+            GlobalLoggedOut?.Invoke();
         }
 
         // ── Internal helpers ─────────────────────────────────────────────────────

@@ -74,6 +74,7 @@ ViewModels/
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
+ SuggestNodesPanelViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]
@@ -227,6 +228,7 @@ ViewModels/
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
+ SuggestNodesPanelViewModel.cs
 Views/CopilotPanelView.xaml.cs
 
 [metadataReferences]

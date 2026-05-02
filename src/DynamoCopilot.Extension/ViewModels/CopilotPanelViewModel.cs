@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -23,7 +23,6 @@ namespace DynamoCopilot.Extension.ViewModels
     // Panel mode enum
     // ─────────────────────────────────────────────────────────────────────────────
 
-    public enum PanelMode { Chat, NodeSuggest }
     public enum ChatMessageType { Normal, SpecCard }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -83,16 +82,13 @@ namespace DynamoCopilot.Extension.ViewModels
 
     public sealed class CopilotPanelViewModel : INotifyPropertyChanged
     {
-        private readonly DynamoCopilotSettings   _settings;
-        private readonly AuthService             _authService;
-        private          ILlmService             _llmService;
-        private readonly LocalNodeSearchService  _localSearchService;
-        private readonly ChatHistoryService      _historyService;
-        private readonly ViewLoadedParams        _dynParams;
-        private readonly PackageStateService     _packageState;
-        private readonly DynamoPackageDownloader _downloader;
-        private readonly RevitApiRagService       _ragService;
-        private          SpecGeneratorService    _specGenerator;
+        private readonly DynamoCopilotSettings     _settings;
+        private readonly AuthService               _authService;
+        private          ILlmService               _llmService;
+        private readonly ChatHistoryService        _historyService;
+        private readonly ViewLoadedParams          _dynParams;
+        private readonly RevitApiRagService        _ragService;
+        private          SpecGeneratorService      _specGenerator;
         private readonly SpecificationStateManager _specState;
         private bool     _isClassifying;
 
@@ -150,50 +146,18 @@ namespace DynamoCopilot.Extension.ViewModels
         private int       _tokensUsed;
         private DateTime? _licenseEndDate;
 
-        // ── Panel mode ────────────────────────────────────────────────────────────
-
-        private PanelMode _mode = PanelMode.Chat;
-
         // ── Chat state ────────────────────────────────────────────────────────────
 
         private bool   _isStreaming;
         private string _statusMessage = string.Empty;
         private bool   _showWelcome   = true;
 
-        // ── Node suggest state ────────────────────────────────────────────────────
-
-        private string _nodeQuery       = string.Empty;
-        private bool   _isSearchingNodes;
-
         public Action? RequestScrollToBottom { get; set; }
 
         // ── Bindable collections ─────────────────────────────────────────────────
 
-        public ObservableCollection<ChatMessageViewModel>    Messages        { get; }
+        public ObservableCollection<ChatMessageViewModel> Messages { get; }
             = new ObservableCollection<ChatMessageViewModel>();
-
-        public ObservableCollection<NodeSuggestionCardViewModel> NodeSuggestions { get; }
-            = new ObservableCollection<NodeSuggestionCardViewModel>();
-
-        // ── Mode bindings ─────────────────────────────────────────────────────────
-
-        public PanelMode CurrentMode
-        {
-            get => _mode;
-            private set
-            {
-                _mode = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(IsChatMode));
-                OnPropertyChanged(nameof(IsNodeMode));
-            }
-        }
-
-        public bool IsChatMode => _mode == PanelMode.Chat;
-        public bool IsNodeMode => _mode == PanelMode.NodeSuggest;
-
-        public void SwitchToChat()        => CurrentMode = PanelMode.Chat;
-        public void SwitchToNodeSuggest() => CurrentMode = PanelMode.NodeSuggest;
 
         // ── Auth bindings ─────────────────────────────────────────────────────────
 
@@ -297,52 +261,18 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _showWelcome = value; OnPropertyChanged(); }
         }
 
-        // ── Node suggest bindings ─────────────────────────────────────────────────
-
-        public string NodeQuery
-        {
-            get => _nodeQuery;
-            set { _nodeQuery = value; OnPropertyChanged(); }
-        }
-
-        public bool IsSearchingNodes
-        {
-            get => _isSearchingNodes;
-            private set
-            {
-                _isSearchingNodes = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(CanSearchNodes));
-                OnPropertyChanged(nameof(ShowNodeHint));
-            }
-        }
-
-        public bool CanSearchNodes => !_isSearchingNodes;
-
-        /// <summary>
-        /// True when the search input area should show its placeholder hint
-        /// (not searching and no results yet).
-        /// </summary>
-        public bool ShowNodeHint => !_isSearchingNodes && NodeSuggestions.Count == 0;
-
         // ── Construction ──────────────────────────────────────────────────────────
 
         public CopilotPanelViewModel(
-            DynamoCopilotSettings    settings,
-            AuthService              authService,
-            LocalNodeSearchService   localSearchService,
-            ChatHistoryService       historyService,
-            ViewLoadedParams         dynParams,
-            PackageStateService      packageState,
-            DynamoPackageDownloader  downloader)
+            DynamoCopilotSettings settings,
+            AuthService           authService,
+            ChatHistoryService    historyService,
+            ViewLoadedParams      dynParams)
         {
-            _settings           = settings;
-            _authService        = authService;
-            _localSearchService = localSearchService;
-            _historyService     = historyService;
-            _dynParams          = dynParams;
-            _packageState       = packageState;
-            _downloader         = downloader;
+            _settings    = settings;
+            _authService = authService;
+            _historyService = historyService;
+            _dynParams   = dynParams;
 
             _llmService     = LlmServiceFactory.Create(settings);
             _ragService     = new RevitApiRagService(
@@ -355,6 +285,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
             _currentSession = _historyService.Load(GetCurrentGraphPath());
             _dynParams.CurrentWorkspaceChanged += OnWorkspaceChanged;
+
+            AuthService.GlobalLoggedIn  += OnGlobalLoggedIn;
+            AuthService.GlobalLoggedOut += OnGlobalLoggedOut;
         }
 
         private void OnSettingsSaved(object? sender, EventArgs e)
@@ -459,23 +392,43 @@ namespace DynamoCopilot.Extension.ViewModels
 
         public void Logout()
         {
-            _authService.Logout();
+            ClearAuthState();       // mark as logged out first so the global event guard skips this VM
+            _authService.Logout();  // deletes tokens.json, fires GlobalLoggedOut → other VM clears
+        }
 
-            Messages.Clear();
-            NodeSuggestions.Clear();
-            ShowWelcome      = true;
-            StatusMessage    = string.Empty;
-            ShowAiPanel      = false;
-            ShowUserPanel    = false;
-            IsLoggedIn       = false;
-            IsRegisterMode   = false;
-            AuthError        = string.Empty;
-            LoginEmail       = string.Empty;
-            RegisterEmail    = string.Empty;
-            NodeQuery        = string.Empty;
-            CurrentMode      = PanelMode.Chat;
-
+        private void ClearAuthState()
+        {
             _streamingCts?.Cancel();
+            Messages.Clear();
+            ShowWelcome    = true;
+            StatusMessage  = string.Empty;
+            ShowAiPanel    = false;
+            ShowUserPanel  = false;
+            IsLoggedIn     = false;
+            IsRegisterMode = false;
+            AuthError      = string.Empty;
+            LoginEmail     = string.Empty;
+            RegisterEmail  = string.Empty;
+        }
+
+        private void OnGlobalLoggedOut()
+        {
+            if (!IsLoggedIn) return;  // we initiated this logout — already cleared
+            DispatchToUi(ClearAuthState);
+        }
+
+        private void OnGlobalLoggedIn(string _)
+        {
+            if (IsLoggedIn) return;  // we initiated this login — already set
+            DispatchToUi(OnAuthSuccess);
+        }
+
+        private static void DispatchToUi(Action action)
+        {
+            var app = System.Windows.Application.Current;
+            if (app == null) { action(); return; }
+            if (app.Dispatcher.CheckAccess()) action();
+            else app.Dispatcher.InvokeAsync(action);
         }
 
         // ── User info (integrated into settings panel) ────────────────────────────
@@ -992,162 +945,12 @@ namespace DynamoCopilot.Extension.ViewModels
 
         public void Shutdown()
         {
+            AuthService.GlobalLoggedIn  -= OnGlobalLoggedIn;
+            AuthService.GlobalLoggedOut -= OnGlobalLoggedOut;
             _streamingCts?.Cancel();
             _dynParams.CurrentWorkspaceChanged -= OnWorkspaceChanged;
             _historyService.Save(_currentSession);
         }
-
-        // ── Node suggest actions ──────────────────────────────────────────────────
-
-        /// <summary>
-        /// Runs the node suggestion pipeline:
-        ///   1. Reads current graph node names (graph context).
-        ///   2. Calls the server (vector search → Gemini re-rank).
-        ///   3. Populates <see cref="NodeSuggestions"/>.
-        /// </summary>
-        public async Task SearchNodesAsync(string query)
-        {
-            if (string.IsNullOrWhiteSpace(query) || _isSearchingNodes) return;
-
-            await RefreshUserInfoAsync();
-            if (IsLicenseExpired)
-            {
-                StatusMessage = "Your licence has expired. Please contact support to renew.";
-                return;
-            }
-
-            IsSearchingNodes = true;
-            foreach (var card in NodeSuggestions) card.Dispose();
-            NodeSuggestions.Clear();
-            OnPropertyChanged(nameof(ShowNodeHint));
-            ShowStatus("Searching nodes\u2026");
-
-            try
-            {
-                var results = await _localSearchService.SearchAsync(query);
-
-                foreach (var node in results)
-                    NodeSuggestions.Add(new NodeSuggestionCardViewModel(
-                        node,
-                        _packageState,
-                        _downloader,
-                        InsertNodeToCanvas));
-
-                StatusMessage = results.Count == 0
-                    ? "No matching nodes found."
-                    : $"Found {results.Count} node{(results.Count == 1 ? "" : "s")}.";
-            }
-            catch (Exception ex)
-            {
-                ShowStatus($"Search failed: {ex.Message}");
-            }
-            finally
-            {
-                IsSearchingNodes = false;
-                OnPropertyChanged(nameof(ShowNodeHint));
-            }
-        }
-
-        // ── Node insertion ────────────────────────────────────────────────────────
-
-        private bool InsertNodeToCanvas(NodeSuggestion node)
-        {
-            try
-            {
-                var model = GetDynamoModel();
-                if (model == null) return false;
-                CopilotLogger.Log($"[Insert] model runtime type = {model.GetType().FullName}");
-
-                var packageFolderPath = _packageState.GetPackageFolderPath(node.PackageName);
-                var (cx, cy) = GetCanvasCenter();
-
-                var ok = DynamoCopilot.GraphInterop.GraphNodeInserter.InsertNode(
-                    model,
-                    node.Name,
-                    node.PackageName,
-                    node.NodeType,
-                    packageFolderPath,
-                    cx, cy,
-                    log: CopilotLogger.Log);
-
-                if (ok) ShowStatus($"Inserted \"{node.Name}\" onto the canvas.");
-                return ok;
-            }
-            catch (Exception ex)
-            {
-                ShowStatus($"Insert failed: {ex.Message}");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Returns the canvas coordinates of the centre of the currently visible workspace area.
-        /// Uses WorkspaceViewModel.X/Y (pan offset) and Zoom to convert viewport centre → canvas coords.
-        /// Falls back to (0, 0) when any value cannot be read.
-        /// </summary>
-        private (double x, double y) GetCanvasCenter()
-        {
-            try
-            {
-                var wsVm = GetCurrentWorkspaceViewModel();
-                if (wsVm == null) return (0, 0);
-
-                var flags = System.Reflection.BindingFlags.Public |
-                            System.Reflection.BindingFlags.Instance;
-
-                double panX = 0, panY = 0, zoom = 1.0;
-                try { panX = Convert.ToDouble(wsVm.GetType().GetProperty("X",    flags)?.GetValue(wsVm) ?? 0.0); } catch { }
-                try { panY = Convert.ToDouble(wsVm.GetType().GetProperty("Y",    flags)?.GetValue(wsVm) ?? 0.0); } catch { }
-                try { zoom = Convert.ToDouble(wsVm.GetType().GetProperty("Zoom", flags)?.GetValue(wsVm) ?? 1.0); } catch { }
-                if (zoom <= 0) zoom = 1.0;
-
-                // Try to find the WorkspaceView panel dimensions via WPF visual tree.
-                double viewW = 1000, viewH = 600;
-                try
-                {
-                    var app = System.Windows.Application.Current;
-                    if (app != null)
-                    {
-                        foreach (System.Windows.Window win in app.Windows)
-                        {
-                            var candidate = FindDescendantByTypeName(win, "WorkspaceView");
-                            if (candidate is System.Windows.FrameworkElement fe &&
-                                fe.ActualWidth > 0 && fe.ActualHeight > 0)
-                            {
-                                viewW = fe.ActualWidth;
-                                viewH = fe.ActualHeight;
-                                break;
-                            }
-                        }
-                    }
-                }
-                catch { }
-
-                // Canvas coord of viewport centre:
-                //   screenPt = panOffset + canvasPt * zoom
-                //   canvasPt = (screenPt - panOffset) / zoom
-                var cx = (viewW / 2.0 - panX) / zoom;
-                var cy = (viewH / 2.0 - panY) / zoom;
-                return (cx, cy);
-            }
-            catch { return (0, 0); }
-        }
-
-        private static System.Windows.DependencyObject? FindDescendantByTypeName(
-            System.Windows.DependencyObject parent, string typeName)
-        {
-            var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < count; i++)
-            {
-                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
-                if (child?.GetType().Name == typeName) return child;
-                var result = FindDescendantByTypeName(child!, typeName);
-                if (result != null) return result;
-            }
-            return null;
-        }
-
-        // ── Private helpers ────────────────────────────────────────────────────────
 
         private void OnAuthSuccess()
         {
@@ -1246,24 +1049,6 @@ namespace DynamoCopilot.Extension.ViewModels
         /// Reads the NickName of every node currently in the workspace.
         /// Returns null when the workspace is empty or inaccessible (server will skip context).
         /// </summary>
-        private string[]? GetGraphNodeNames()
-        {
-            try
-            {
-                var wsVm  = GetCurrentWorkspaceViewModel();
-                if (wsVm == null) return null;
-
-                var names = GraphNodeReader.GetAllNodeNames(wsVm);
-                if (names.Count == 0) return null;
-
-                var arr = new string[names.Count];
-                for (int i = 0; i < names.Count; i++)
-                    arr[i] = names[i];
-                return arr;
-            }
-            catch { return null; }
-        }
-
         private string GetCurrentGraphPath()
         {
             try { return _dynParams.CurrentWorkspaceModel?.FileName ?? string.Empty; }

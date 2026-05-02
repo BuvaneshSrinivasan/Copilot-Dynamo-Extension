@@ -81,39 +81,6 @@ namespace DynamoCopilot.Extension.Views
             RegisterConfirmPasswordBox.Clear();
         }
 
-        // ── Mode toggle ───────────────────────────────────────────────────────
-
-        private void OnChatModeClick(object sender, RoutedEventArgs e)
-            => _viewModel.SwitchToChat();
-
-        private void OnNodeModeClick(object sender, RoutedEventArgs e)
-        {
-            _viewModel.SwitchToNodeSuggest();
-            // Give focus to the node query box when switching to node mode
-            NodeQueryBox.Focus();
-        }
-
-        // ── Node suggest ──────────────────────────────────────────────────────
-
-        private async void OnNodeSearchClick(object sender, RoutedEventArgs e)
-            => await RunNodeSearchAsync();
-
-        private async void OnNodeQueryKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
-            {
-                e.Handled = true;
-                await RunNodeSearchAsync();
-            }
-        }
-
-        private async System.Threading.Tasks.Task RunNodeSearchAsync()
-        {
-            var query = NodeQueryBox.Text.Trim();
-            if (string.IsNullOrEmpty(query)) return;
-            await _viewModel.SearchNodesAsync(query);
-        }
-
         // ── Chat ──────────────────────────────────────────────────────────────
 
         private async void OnSendClick(object sender, RoutedEventArgs e)

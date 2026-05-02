@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using System.Windows.Controls;
 using Dynamo.Wpf.Extensions;
 using DynamoCopilot.Core.Services;
@@ -40,13 +39,18 @@ namespace DynamoCopilot.Extension
             if (_viewModel != null)
                 _ = _viewModel.InitializeAsync();
 
+            if (_view != null)
+            {
+                _view.Loaded   += OnViewLoaded;
+                _view.Unloaded += OnViewUnloaded;
+            }
+
             try
             {
-                var topMenu = new MenuItem { Header = TabName };
+                var bimEraMenu  = FindOrCreateBimEraMenu(loadedParams.dynamoMenu.Items, TabName);
                 _toggleMenuItem = new MenuItem { Header = Name };
                 _toggleMenuItem.Click += OnTogglePanel;
-                topMenu.Items.Add(_toggleMenuItem);
-                loadedParams.dynamoMenu.Items.Add(topMenu);
+                bimEraMenu.Items.Add(_toggleMenuItem);
             }
             catch { }
         }
@@ -74,18 +78,13 @@ namespace DynamoCopilot.Extension
             if (_loadedParams == null || _view == null) return;
 
             if (_panelOpen)
-            {
                 _loadedParams.CloseExtensioninInSideBar(this);
-                _panelOpen = false;
-                if (_toggleMenuItem != null) _toggleMenuItem.Header = "Show Panel";
-            }
             else
-            {
                 _loadedParams.AddToExtensionsSideBar(this, _view);
-                _panelOpen = true;
-                if (_toggleMenuItem != null) _toggleMenuItem.Header = "Hide Panel";
-            }
         }
+
+        private void OnViewLoaded(object _, System.Windows.RoutedEventArgs __)   => _panelOpen = true;
+        private void OnViewUnloaded(object _, System.Windows.RoutedEventArgs __) => _panelOpen = false;
 
         private void OnDispatcherUnhandledException(
             object sender,
@@ -116,71 +115,32 @@ namespace DynamoCopilot.Extension
 
             _authService = new AuthService(settings.EffectiveServerUrl);
 
-            var onnxEmbedder = new OnnxEmbeddingService();
-            var localSearch  = new LocalNodeSearchService(onnxEmbedder.IsReady ? onnxEmbedder : null);
-
-            var historyService  = new ChatHistoryService();
-            var currentPkgDir   = ResolveCurrentPackagesDir(loadedParams);
-            var packageState    = new PackageStateService(currentPkgDir);
-            var dynamoViewModel = loadedParams.DynamoWindow?.DataContext;
-            var downloader      = new DynamoPackageDownloader(dynamoViewModel);
+            var historyService = new ChatHistoryService();
 
             _viewModel = new CopilotPanelViewModel(
-                settings, _authService, localSearch,
-                historyService, loadedParams, packageState, downloader);
+                settings, _authService, historyService, loadedParams);
 
             _view = new CopilotPanelView(_viewModel);
         }
 
         /// <summary>
-        /// Tries to get the packages directory for the currently running Dynamo version
-        /// from DynamoModel.PathManager via reflection.
-        /// Falls back to null (PackageStateService will still scan all versions).
+        /// Finds the "BimEra" top-level menu item if one already exists (added by the
+        /// Suggest Nodes extension), or creates and registers a new one. Both extensions
+        /// share a single "BimEra" menu entry regardless of load order.
         /// </summary>
-        private static string? ResolveCurrentPackagesDir(ViewLoadedParams loadedParams)
+        private static MenuItem FindOrCreateBimEraMenu(
+            System.Collections.IList menuItems, string tabName)
         {
-            try
+            foreach (var item in menuItems)
             {
-                var flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
-
-                var dvmField = loadedParams.GetType().GetField("dynamoViewModel", flags);
-                var dvm      = dvmField?.GetValue(loadedParams);
-                if (dvm == null) return null;
-
-                var model = dvm.GetType()
-                    .GetProperty("Model", BindingFlags.Public | BindingFlags.Instance)
-                    ?.GetValue(dvm);
-                if (model == null) return null;
-
-                var pathManager = model.GetType()
-                    .GetProperty("PathManager", BindingFlags.Public | BindingFlags.Instance)
-                    ?.GetValue(model);
-                if (pathManager == null) return null;
-
-                var defaultPkg = pathManager.GetType()
-                    .GetProperty("DefaultPackagesDirectory",
-                        BindingFlags.Public | BindingFlags.Instance)
-                    ?.GetValue(pathManager) as string;
-
-                if (!string.IsNullOrEmpty(defaultPkg)) return defaultPkg;
-
-                var dirs = pathManager.GetType()
-                    .GetProperty("PackagesDirectories",
-                        BindingFlags.Public | BindingFlags.Instance)
-                    ?.GetValue(pathManager) as System.Collections.IEnumerable;
-
-                if (dirs != null)
-                {
-                    foreach (var d in dirs)
-                    {
-                        var s = d?.ToString();
-                        if (!string.IsNullOrEmpty(s)) return s;
-                    }
-                }
-
-                return null;
+                if (item is MenuItem existing &&
+                    existing.Header?.ToString() == tabName)
+                    return existing;
             }
-            catch { return null; }
+
+            var newMenu = new MenuItem { Header = tabName };
+            menuItems.Add(newMenu);
+            return newMenu;
         }
     }
 }
