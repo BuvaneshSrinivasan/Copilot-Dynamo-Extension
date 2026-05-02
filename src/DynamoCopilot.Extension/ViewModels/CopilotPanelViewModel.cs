@@ -20,10 +20,6 @@ using DynamoCopilot.GraphInterop;
 
 namespace DynamoCopilot.Extension.ViewModels
 {
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Panel mode enum
-    // ─────────────────────────────────────────────────────────────────────────────
-
     public enum ChatMessageType { Normal, SpecCard }
 
     // ─────────────────────────────────────────────────────────────────────────────
