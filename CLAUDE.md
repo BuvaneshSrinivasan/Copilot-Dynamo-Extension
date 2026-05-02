@@ -441,6 +441,8 @@ X-Admin-Key: your-admin-key
 
 ## Configuration Reference
 
+**Railway env var naming:** Railway runs on Linux, which allows `:` in environment variable names. Set variables exactly as shown (e.g. `Gemini:ApiKey`, `Jwt:Secret`) — ASP.NET Core reads them directly. The `__` double-underscore convention is only needed on Windows.
+
 | Key | Description | Default |
 |-----|-------------|---------|
 | `Gemini:ApiKey` | Google Gemini API key | **Required** |
