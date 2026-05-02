@@ -305,6 +305,56 @@ namespace DynamoCopilot.Core.Services
             }
         }
 
+        // ── Granted extensions ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Decodes the "ext" claims from the stored access token without a network call.
+        /// Returns the set of extension IDs the user was licensed for when the token
+        /// was last issued. Returns an empty set if there is no token or it cannot be decoded.
+        ///
+        /// The JWT payload may contain:
+        ///   "ext": "Copilot"                       ← single licence
+        ///   "ext": ["Copilot", "SuggestNodes"]     ← multiple licences
+        /// </summary>
+        public HashSet<string> GetGrantedExtensions()
+        {
+            if (_tokens == null || string.IsNullOrEmpty(_tokens.AccessToken))
+                return new HashSet<string>();
+
+            try
+            {
+                var parts = _tokens.AccessToken.Split('.');
+                if (parts.Length != 3) return new HashSet<string>();
+
+                var payload = parts[1];
+                payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+                payload = payload.Replace('-', '+').Replace('_', '/');
+
+                var bytes   = Convert.FromBase64String(payload);
+                var jsonStr = Encoding.UTF8.GetString(bytes);
+
+                using var doc = JsonDocument.Parse(jsonStr);
+                if (!doc.RootElement.TryGetProperty("ext", out var extEl))
+                    return new HashSet<string>();
+
+                var result = new HashSet<string>(StringComparer.Ordinal);
+                if (extEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var el in extEl.EnumerateArray())
+                        if (el.GetString() is { } s) result.Add(s);
+                }
+                else if (extEl.ValueKind == JsonValueKind.String && extEl.GetString() is { } str)
+                {
+                    result.Add(str);
+                }
+                return result;
+            }
+            catch
+            {
+                return new HashSet<string>();
+            }
+        }
+
         // ── Logout ───────────────────────────────────────────────────────────────
 
         public void Logout()

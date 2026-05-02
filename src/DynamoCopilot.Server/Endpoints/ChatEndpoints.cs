@@ -1,5 +1,6 @@
 // DO NOT DELETE, SAVED FOR FUTURE USE — server-side chat streaming endpoint for the subscription model.
 using System.Text.Json;
+using DynamoCopilot.Server.Filters;
 using DynamoCopilot.Server.Models;
 using DynamoCopilot.Server.Services;
 
@@ -27,7 +28,8 @@ public static class ChatEndpoints
         // The JWT is read from the "Authorization: Bearer {token}" header.
         // UseAuthorization() middleware in Program.cs is what actually enforces this.
         app.MapPost("/api/chat/stream", HandleStreamAsync)
-           .RequireAuthorization();
+           .RequireAuthorization()
+           .AddEndpointFilter(LicenseFilter.Require(AppConstants.Extensions.Copilot));
     }
 
     // ASP.NET Core's Minimal API engine inspects this method's parameters and

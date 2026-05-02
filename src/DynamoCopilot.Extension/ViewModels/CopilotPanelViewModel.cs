@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Dynamo.Wpf.Extensions;
+using DynamoCopilot.Core;
 using DynamoCopilot.Core.Models;
 using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Services.Providers;
@@ -142,9 +143,14 @@ namespace DynamoCopilot.Extension.ViewModels
         // ── User info ─────────────────────────────────────────────────────────────
 
         private string    _userEmail       = string.Empty;
-        private bool      _isLicenceActive = true;
+        private bool      _isLicenceActive = false;
         private int       _tokensUsed;
         private DateTime? _licenseEndDate;
+
+        // Shown in the main panel when the user is logged in but has no licence.
+        public string LicenseMessage =>
+            $"Sorry, you don't have a licence for Dynamo Co-pilot.\n\n" +
+            $"Contact us at {ExtensionConstants.SupportEmail}";
 
         // ── Chat state ────────────────────────────────────────────────────────────
 
@@ -442,11 +448,13 @@ namespace DynamoCopilot.Extension.ViewModels
             var info = await _authService.GetUserInfoAsync();
             if (info == null) return;
 
-            UserEmail       = info.Email;
+            UserEmail  = info.Email;
             if (info.DailyTokenCount > 0 || TokensUsed == 0)
-                TokensUsed  = info.DailyTokenCount;
-            IsLicenceActive = info.IsActive && !info.LicenseExpired;
-            LicenseEndDate  = info.LicenseEndDate;
+                TokensUsed = info.DailyTokenCount;
+
+            var lic = info.GetLicense(ExtensionConstants.CopilotId);
+            IsLicenceActive = info.IsActive && lic != null && lic.IsActive && !lic.Expired;
+            LicenseEndDate  = lic?.EndDate;
         }
 
         // ── Chat actions ──────────────────────────────────────────────────────────
@@ -483,9 +491,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private async Task SendMessageCoreAsync(string userText)
         {
-            if (IsLicenseExpired)
+            if (!IsLicenceActive)
             {
-                StatusMessage = "Your licence has expired. Please contact support to renew.";
+                StatusMessage = LicenseMessage;
                 IsStreaming   = false;
                 return;
             }
@@ -954,8 +962,10 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private void OnAuthSuccess()
         {
-            UserEmail  = _authService.Email;
-            IsLoggedIn = true;
+            UserEmail       = _authService.Email;
+            // Set licence state immediately from the JWT — no network call needed.
+            IsLicenceActive = _authService.GetGrantedExtensions().Contains(ExtensionConstants.CopilotId);
+            IsLoggedIn      = true;
             RestoreHistory();
             _ = RefreshUserInfoAsync();
         }

@@ -29,18 +29,26 @@ public static class UserEndpoints
         if (!Guid.TryParse(userIdStr, out var userId))
             return Results.Unauthorized();
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        var user = await db.Users
+            .Include(u => u.Licenses)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null)
             return Results.NotFound(new { error = "User not found." });
+
+        var now = DateTime.UtcNow;
 
         return Results.Ok(new
         {
             user.Email,
             user.DailyTokenCount,
             user.IsActive,
-            user.LicenseStartDate,
-            user.LicenseEndDate,
-            LicenseExpired = user.LicenseEndDate.HasValue && user.LicenseEndDate.Value < DateTime.UtcNow
+            Licenses = user.Licenses.Select(l => new
+            {
+                l.Extension,
+                l.IsActive,
+                l.EndDate,
+                Expired = l.EndDate.HasValue && l.EndDate.Value < now
+            })
         });
     }
 }

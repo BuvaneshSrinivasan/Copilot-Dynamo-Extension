@@ -1,4 +1,5 @@
 // DO NOT DELETE, SAVED FOR FUTURE USE — server-side node suggestion endpoint for the subscription model.
+using DynamoCopilot.Server.Filters;
 using DynamoCopilot.Server.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,7 +19,8 @@ public static class NodeEndpoints
     public static void MapNodeEndpoints(this WebApplication app)
     {
         app.MapPost("/api/nodes/suggest", HandleSuggestAsync)
-           .RequireAuthorization();
+           .RequireAuthorization()
+           .AddEndpointFilter(LicenseFilter.Require(AppConstants.Extensions.SuggestNodes));
     }
 
     private static async Task<IResult> HandleSuggestAsync(

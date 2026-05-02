@@ -101,16 +101,9 @@ public class RateLimitMiddleware
             return;
         }
 
-        if (user.LicenseEndDate.HasValue && user.LicenseEndDate.Value < DateTime.UtcNow)
-        {
-            context.Response.StatusCode = 403;
-            await context.Response.WriteAsJsonAsync(new
-            {
-                error = "Your licence has expired. Please contact support to renew.",
-                expiredAt = user.LicenseEndDate.Value
-            });
-            return;
-        }
+        // Per-extension licence validation is done via the "ext" JWT claim at the
+        // endpoint level — not here. The middleware only enforces account-level state
+        // (IsActive) and rate limits.
 
         // ── LAZY DAILY RESET ──────────────────────────────────────────────────
         // Instead of a cron job that resets all users at midnight, we reset lazily:

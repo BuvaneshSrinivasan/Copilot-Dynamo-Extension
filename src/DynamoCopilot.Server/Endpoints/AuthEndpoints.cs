@@ -9,16 +9,19 @@ namespace DynamoCopilot.Server.Endpoints;
 // AuthEndpoints — /auth/* routes
 // =============================================================================
 //
-// POST /auth/register  → create account (auto-activated, open registration)
+// POST /auth/register  → create account (open registration, no licence granted)
 // POST /auth/login     → verify credentials, return access + refresh tokens
 // POST /auth/refresh   → exchange refresh token for a new access token
+//
+// The access token JWT contains one "ext" claim per extension the user holds
+// an active licence for (e.g. ext=Copilot, ext=SuggestNodes).
+// Licences are granted separately via POST /admin/grant.
 // =============================================================================
 
 public static class AuthEndpoints
 {
     public static void MapAuthEndpoints(this WebApplication app)
     {
-        // MapGroup creates a shared route prefix. All routes here are /auth/*
         var group = app.MapGroup("/auth");
 
         group.MapPost("/register", RegisterAsync);
@@ -33,38 +36,28 @@ public static class AuthEndpoints
         AppDbContext db,
         CancellationToken ct)
     {
-        // Basic input validation
         if (string.IsNullOrWhiteSpace(request.Email) || !request.Email.Contains('@'))
             return Results.BadRequest(new { error = "A valid email address is required." });
 
         if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
             return Results.BadRequest(new { error = "Password must be at least 8 characters." });
 
-        // Normalise email: trim whitespace + lowercase
-        // Always normalise before storing or comparing so "Alice@Test.com" == "alice@test.com"
         var email = request.Email.Trim().ToLowerInvariant();
 
-        // Check for duplicate email
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
             return Results.Conflict(new { error = "An account with this email already exists." });
 
-        // BCrypt.HashPassword handles salt generation automatically.
-        // A salt is a random value mixed into the hash so two identical passwords
-        // produce different hashes — prevents rainbow table attacks.
-        var now = DateTime.UtcNow;
         var user = new User
         {
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            IsActive = true, // open registration: everyone who signs up gets access
-            LicenseStartDate = now,
-            LicenseEndDate = now.AddMonths(6)
+            IsActive = true
+            // No licence is granted on registration — admin grants via POST /admin/grant
         };
 
         db.Users.Add(user);
         await db.SaveChangesAsync(ct);
 
-        // 201 Created — standard HTTP status for a successful resource creation
         return Results.Created($"/auth/users/{user.Id}", new { message = "Account created. You can now log in." });
     }
 
@@ -83,9 +76,8 @@ public static class AuthEndpoints
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
 
-        // IMPORTANT: we return the same generic error whether the email doesn't exist
-        // or the password is wrong. This prevents "email enumeration" — an attacker
-        // probing which email addresses have accounts by observing different error messages.
+        // Return the same error whether the email doesn't exist or the password is wrong
+        // to prevent email enumeration attacks.
         if (user is null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return Results.Unauthorized();
 
@@ -94,13 +86,11 @@ public static class AuthEndpoints
                 new { error = "Your account has been deactivated. Please contact support." },
                 statusCode: 403);
 
-        if (user.LicenseEndDate.HasValue && user.LicenseEndDate.Value < DateTime.UtcNow)
-            return Results.Json(
-                new { error = "Your licence has expired. Please contact support to renew.", expiredAt = user.LicenseEndDate.Value },
-                statusCode: 403);
+        // A user with no active licences can still log in — they just get an empty
+        // "ext" claim. The extension shows a "no licence" banner for locked tools.
+        var grantedExtensions = await ActiveLicenseNamesAsync(db, user.Id, ct);
 
-        // Generate both tokens
-        var accessToken = tokenService.GenerateAccessToken(user);
+        var accessToken = tokenService.GenerateAccessToken(user, grantedExtensions);
         var rawRefreshToken = tokenService.GenerateRawRefreshToken();
         var refreshTokenEntity = tokenService.CreateRefreshToken(user.Id, rawRefreshToken);
 
@@ -109,7 +99,7 @@ public static class AuthEndpoints
 
         return Results.Ok(new AuthResponse(
             AccessToken: accessToken,
-            RefreshToken: rawRefreshToken,   // raw token → client stores this
+            RefreshToken: rawRefreshToken,
             ExpiresAt: refreshTokenEntity.ExpiresAt));
     }
 
@@ -124,13 +114,10 @@ public static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
             return Results.BadRequest(new { error = "Refresh token is required." });
 
-        // Hash the incoming token and look it up directly in the DB.
-        // This is O(1) — we don't need to load all tokens and loop.
-        // SHA-256 is deterministic: same input → same hash, every time.
         var tokenHash = tokenService.HashToken(request.RefreshToken);
 
         var refreshToken = await db.RefreshTokens
-            .Include(rt => rt.User)       // also load the related User in the same query
+            .Include(rt => rt.User)
             .FirstOrDefaultAsync(rt =>
                 rt.TokenHash == tokenHash &&
                 rt.ExpiresAt > DateTime.UtcNow, ct);
@@ -141,17 +128,16 @@ public static class AuthEndpoints
         if (!refreshToken.User.IsActive)
             return Results.Json(new { error = "Account deactivated." }, statusCode: 403);
 
-        // TOKEN ROTATION: delete the old refresh token and issue a new one.
-        // This means each refresh token can only be used once.
-        // If an attacker steals and uses a refresh token before the real client does,
-        // the real client's next refresh will fail — alerting them that something is wrong.
+        // TOKEN ROTATION: delete old token, issue a new one so each refresh token is single-use.
         db.RefreshTokens.Remove(refreshToken);
 
         var newRawRefreshToken = tokenService.GenerateRawRefreshToken();
         var newRefreshTokenEntity = tokenService.CreateRefreshToken(refreshToken.UserId, newRawRefreshToken);
         db.RefreshTokens.Add(newRefreshTokenEntity);
 
-        var accessToken = tokenService.GenerateAccessToken(refreshToken.User);
+        // Re-query licences so the refreshed token reflects any grants made since login.
+        var grantedExtensions = await ActiveLicenseNamesAsync(db, refreshToken.UserId, ct);
+        var accessToken = tokenService.GenerateAccessToken(refreshToken.User, grantedExtensions);
 
         await db.SaveChangesAsync(ct);
 
@@ -159,5 +145,20 @@ public static class AuthEndpoints
             AccessToken: accessToken,
             RefreshToken: newRawRefreshToken,
             ExpiresAt: newRefreshTokenEntity.ExpiresAt));
+    }
+
+    // ── HELPERS ───────────────────────────────────────────────────────────────
+
+    // Returns the extension names the user currently has an active, non-expired licence for.
+    private static Task<List<string>> ActiveLicenseNamesAsync(
+        AppDbContext db, Guid userId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        return db.UserLicenses
+            .Where(ul => ul.UserId == userId
+                      && ul.IsActive
+                      && (ul.EndDate == null || ul.EndDate > now))
+            .Select(ul => ul.Extension)
+            .ToListAsync(ct);
     }
 }

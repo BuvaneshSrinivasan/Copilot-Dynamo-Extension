@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Dynamo.Wpf.Extensions;
+using DynamoCopilot.Core;
 using DynamoCopilot.Core.Models;
 using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Settings;
@@ -32,9 +33,13 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private bool      _showUserPanel;
         private string    _userEmail       = string.Empty;
-        private bool      _isLicenceActive = true;
+        private bool      _isLicenceActive = false;
         private int       _tokensUsed;
         private DateTime? _licenseEndDate;
+
+        public string LicenseMessage =>
+            $"Sorry, you don't have a licence for Suggest Nodes.\n\n" +
+            $"Contact us at {ExtensionConstants.SupportEmail}";
 
         // ── Node suggest state ────────────────────────────────────────────────
 
@@ -294,11 +299,13 @@ namespace DynamoCopilot.Extension.ViewModels
             var info  = await _authService.GetUserInfoAsync();
             if (info == null) return;
 
-            UserEmail       = info.Email;
+            UserEmail  = info.Email;
             if (info.DailyTokenCount > 0 || TokensUsed == 0)
-                TokensUsed  = info.DailyTokenCount;
-            IsLicenceActive = info.IsActive && !info.LicenseExpired;
-            LicenseEndDate  = info.LicenseEndDate;
+                TokensUsed = info.DailyTokenCount;
+
+            var lic = info.GetLicense(ExtensionConstants.SuggestNodesId);
+            IsLicenceActive = info.IsActive && lic != null && lic.IsActive && !lic.Expired;
+            LicenseEndDate  = lic?.EndDate;
         }
 
         // ── Node search ───────────────────────────────────────────────────────
@@ -308,9 +315,9 @@ namespace DynamoCopilot.Extension.ViewModels
             if (string.IsNullOrWhiteSpace(query) || _isSearchingNodes) return;
 
             await RefreshUserInfoAsync();
-            if (IsLicenseExpired)
+            if (!IsLicenceActive)
             {
-                StatusMessage = "Your licence has expired. Please contact support to renew.";
+                StatusMessage = LicenseMessage;
                 return;
             }
 
@@ -435,8 +442,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private void OnAuthSuccess()
         {
-            UserEmail  = _authService.Email;
-            IsLoggedIn = true;
+            UserEmail       = _authService.Email;
+            IsLicenceActive = _authService.GetGrantedExtensions().Contains(ExtensionConstants.SuggestNodesId);
+            IsLoggedIn      = true;
             _ = RefreshUserInfoAsync();
         }
 

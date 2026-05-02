@@ -8,16 +8,16 @@ This file is read by Claude Code at the start of every session. Keep it updated.
 
 The project ships **two Dynamo sidebar extensions** under a shared "BimEra" menu tab, both compiled into a single DLL (`DynamoCopilot.Extension.dll`):
 
-1. **Dynamo Co-pilot** — AI chat for generating and fixing Dynamo Python (Revit API) code
-2. **Suggest Nodes** — local vector search over 78,000+ indexed Dynamo package nodes
+1. **Dynamo Co-pilot** (`ExtensionConstants.CopilotId = "Copilot"`) — AI chat for generating and fixing Dynamo Python (Revit API) code
+2. **Suggest Nodes** (`ExtensionConstants.SuggestNodesId = "SuggestNodes"`) — local vector search over 78,000+ indexed Dynamo package nodes
 
 The **server** (`src/DynamoCopilot.Server/`) is the cloud backend that:
 1. Authenticates users (email + password, JWT tokens)
 2. Enforces rate limits (daily requests + daily tokens per user)
 3. Proxies chat requests to Google Gemini (swappable to other providers via `ILlmService`)
-4. Manages user accounts and licenses
+4. Manages user accounts and per-extension licences
 
-The extension and server are **developed separately**. The server is built and tested with Postman first. The extension is connected to the server only after all server phases are complete.
+The extension and server are **developed separately**. The server is built and tested with Postman first.
 
 ---
 
@@ -29,7 +29,7 @@ src/
 ├── DynamoCopilot.Extension/     Dynamo WPF add-in (the UI inside Dynamo)
 ├── DynamoCopilot.GraphInterop/  Reflection wrappers around Dynamo internals
 ├── DynamoCopilot.NodeIndexer/   CLI tool — builds nodes.db from package zips/folders
-└── DynamoCopilot.Server/        Cloud backend API ← active development
+└── DynamoCopilot.Server/        Cloud backend API
 ```
 
 ---
@@ -123,6 +123,45 @@ Both VMs subscribe in their constructor and **unsubscribe in `Shutdown()`** to p
 
 **Node suggestion cards do NOT appear in the Copilot chat.** If the AI mentions a node name in prose, it stays as text — no interactive cards. All node card functionality is isolated to the Suggest Nodes extension.
 
+### Per-extension licensing
+
+Licences are stored in the `UserLicenses` table (one row per user per extension). Each extension has a fixed string identifier defined in `ExtensionConstants` (Core project) and `AppConstants` (Server project) — both files must stay in sync.
+
+**Extension IDs** (`src/DynamoCopilot.Core/ExtensionConstants.cs`):
+```csharp
+public const string CopilotId      = "Copilot";
+public const string SuggestNodesId = "SuggestNodes";
+public const string SupportEmail   = "info@bimera.com";
+```
+
+**Server constants** (`src/DynamoCopilot.Server/AppConstants.cs`):
+```csharp
+public static class Extensions
+{
+    public const string Copilot      = "Copilot";
+    public const string SuggestNodes = "SuggestNodes";
+}
+```
+
+**When adding a new extension:** add its ID to both files and add a `LicenseFilter.Require(AppConstants.Extensions.NewId)` to its endpoint.
+
+**Licence check flow (extension side):**
+1. `OnAuthSuccess()` — calls `_authService.GetGrantedExtensions()` which decodes the `ext` JWT claims synchronously. Sets `IsLicenceActive` immediately (no network call).
+2. `RefreshUserInfoAsync()` — hits `/api/me`, finds the extension-specific `UserLicenseInfo` row in the `Licenses[]` array, updates `IsLicenceActive` and `LicenseEndDate` with server-authoritative values.
+3. The XAML shows a "Sorry, you don't have a licence…" banner when `IsLicenceActive = false`, and hides the chat input / search input. The user info panel shows the expiry date for that extension's licence only.
+
+**Licence check flow (server side):**
+- `LicenseFilter.Require(extensionId)` is an endpoint filter attached to each protected route. It reads `httpContext.User.FindAll("ext")` and returns `403 { error: "no_license" }` if the extension ID is absent from the JWT.
+- `User.IsActive` remains a global account kill switch checked by `RateLimitMiddleware`.
+
+**Granting a licence (Postman workflow):**
+```
+POST /admin/grant
+X-Admin-Key: your-key
+{ "email": "user@example.com", "extension": "Copilot", "months": 12 }
+```
+The user must log out and back in (or wait for token refresh) to receive the updated `ext` claim.
+
 ### Package State (`PackageStateService`)
 
 `IsInstalled(packageName)` checks **only the currently running Dynamo version's packages folder**, not all versions. A package downloaded in Revit 2025 is not considered installed when running in Revit 2024.
@@ -201,10 +240,10 @@ gh release upload v1.0.0 assets/nodes.db --repo BuvaneshSrinivasan/Copilot-Dynam
 | Phase | Status | What It Adds |
 |-------|--------|-------------|
 | 1 | ✅ Complete | Gemini streaming endpoint, no auth |
-| 2 | 🔜 Next | PostgreSQL + Users table (EF Core) |
-| 3 | ⏳ Pending | Email/password auth, JWT access + refresh tokens |
-| 4 | ⏳ Pending | Rate limiting middleware (requests/day + tokens/day) |
-| 5 | ⏳ Pending | Admin endpoints (manage users, view usage) |
+| 2 | ✅ Complete | PostgreSQL + Users table (EF Core) |
+| 3 | ✅ Complete | Email/password auth, JWT access + refresh tokens |
+| 4 | ✅ Complete | Rate limiting middleware (requests/day + tokens/day) |
+| 5 | ✅ Complete | Admin endpoints + per-extension `UserLicenses` table |
 | 6 | ⏳ Pending | Railway deployment (Dockerfile, env vars) |
 
 ---
@@ -214,29 +253,43 @@ gh release upload v1.0.0 assets/nodes.db --repo BuvaneshSrinivasan/Copilot-Dynam
 ```
 src/DynamoCopilot.Server/
 ├── Program.cs                    Entry point: services + middleware + routes
+├── AppConstants.cs               Extension ID strings (must match ExtensionConstants in Core)
 ├── appsettings.json              Default config (NO secrets here)
 ├── appsettings.Development.json  Local dev overrides (never commit API keys)
 ├── Dockerfile                    Phase 6
 │
 ├── Models/
-│   └── ChatRequest.cs            ChatRequest + ChatMessage records (DTOs)
+│   ├── ChatRequest.cs            ChatRequest + ChatMessage records (DTOs)
+│   ├── User.cs                   EF Core entity — Users table
+│   ├── UserLicense.cs            EF Core entity — UserLicenses table (per-extension)
+│   ├── RefreshToken.cs           EF Core entity — RefreshTokens table
+│   ├── DynamoNode.cs             EF Core entity — DynamoNodes table
+│   └── AuthRequests.cs           Login/register/refresh request DTOs
 │
 ├── Services/
 │   ├── ILlmService.cs            Interface: any AI provider must implement this
 │   ├── GeminiService.cs          Google Gemini implementation
-│   ├── TokenService.cs           Phase 3: JWT generation + refresh token handling
-│   └── RateLimitService.cs       Phase 4: daily limit checks + reset logic
+│   ├── TokenService.cs           JWT generation + refresh token handling
+│   ├── UsageTracker.cs           Tracks daily request/token counts
+│   ├── EmbeddingService.cs       Gemini text embedding for node search
+│   ├── NodeSearchService.cs      Vector + keyword hybrid search
+│   └── NodeRerankService.cs      Gemini re-ranking of search results
 │
 ├── Endpoints/
-│   ├── ChatEndpoints.cs          POST /api/chat/stream
-│   ├── AuthEndpoints.cs          Phase 3: POST /auth/register, /auth/login, /auth/refresh
-│   └── AdminEndpoints.cs         Phase 5: GET /admin/users, PATCH /admin/users/{id}/...
+│   ├── ChatEndpoints.cs          POST /api/chat/stream  (requires Copilot licence)
+│   ├── NodeEndpoints.cs          POST /api/nodes/suggest (requires SuggestNodes licence)
+│   ├── AuthEndpoints.cs          POST /auth/register, /auth/login, /auth/refresh
+│   ├── UserEndpoints.cs          GET /api/me
+│   └── AdminEndpoints.cs         GET /admin/users, POST /admin/grant, POST /admin/revoke, …
 │
-├── Data/                         Phase 2+
+├── Filters/
+│   └── LicenseFilter.cs          Endpoint filter — checks JWT "ext" claim per extension
+│
+├── Data/
 │   ├── AppDbContext.cs           EF Core DbContext
 │   └── Migrations/               Generated by `dotnet ef migrations add`
 │
-└── Middleware/                   Phase 4
+└── Middleware/
     └── RateLimitMiddleware.cs    Checks IsActive + daily request/token counts
 ```
 
@@ -244,53 +297,76 @@ src/DynamoCopilot.Server/
 
 ## Server — API Reference
 
-### Phase 1 Endpoints
+### Auth endpoints
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /health | None | Health check |
-| POST | /api/chat/stream | None (Phase 3 adds JWT) | Stream AI response as SSE |
+| POST | /auth/register | None | Create account (no licence granted on register) |
+| POST | /auth/login | None | Returns access token (1hr) + refresh token (7 days) |
+| POST | /auth/refresh | Refresh token | New access + refresh tokens (token rotation) |
+| GET | /api/me | Bearer JWT | User profile + per-extension licence list |
 
-### POST /api/chat/stream — Request
+### Chat / node endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/chat/stream | Bearer + `ext=Copilot` | Stream AI response as SSE |
+| POST | /api/nodes/suggest | Bearer + `ext=SuggestNodes` | Vector search + Gemini re-rank |
+
+### Admin endpoints (X-Admin-Key header required)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /admin/users | All users with their licences and usage |
+| POST | /admin/grant | `{ email, extension, months }` — grant or extend a licence |
+| POST | /admin/revoke | `{ email, extension }` — revoke a licence (sets IsActive=false) |
+| POST | /admin/users/{id}/activate | Re-enable a deactivated account |
+| POST | /admin/users/{id}/deactivate | Global account kill switch |
+| POST | /admin/users/{id}/reset-usage | Reset daily counters |
+| PATCH | /admin/users/{id}/limits | Override per-user rate limits |
+
+### POST /api/chat/stream — Request / Response
+
+```json
+{ "messages": [{ "role": "user", "content": "Write hello world in Python for Dynamo" }] }
+```
+```
+data: {"type":"token","value":"Sure"}
+data: {"type":"done"}
+data: {"type":"error","message":"..."}   ← on failure
+```
+
+### JWT payload
 
 ```json
 {
-  "messages": [
-    { "role": "user", "content": "Write a Python function to sum a list" },
-    { "role": "assistant", "content": "Here is the code..." },
-    { "role": "user", "content": "Can you add error handling?" }
+  "sub":   "<user-guid>",
+  "email": "user@example.com",
+  "jti":   "<unique-token-id>",
+  "ext":   ["Copilot", "SuggestNodes"],   ← one entry per active licence
+  "exp":   1234567890
+}
+```
+
+`ext` is populated at login and refresh from the `UserLicenses` table. A user with no licences gets an empty `ext` array — they can log in but all extension endpoints return 403.
+
+### GET /api/me — Response
+
+```json
+{
+  "email": "user@example.com",
+  "dailyTokenCount": 1200,
+  "isActive": true,
+  "licenses": [
+    { "extension": "Copilot", "isActive": true, "endDate": "2027-01-01T00:00:00Z", "expired": false }
   ]
 }
 ```
 
-### POST /api/chat/stream — Response (SSE stream)
-
-```
-data: {"type":"token","value":"Sure"}
-data: {"type":"token","value":", here is"}
-data: {"type":"token","value":" the updated code..."}
-data: {"type":"done"}
-```
-
-Error event (if Gemini API fails):
-```
-data: {"type":"error","message":"Gemini API error 429: quota exceeded"}
-```
-
-### Phase 3+ Endpoints (planned)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | /auth/register | None | Create account (auto-activated) |
-| POST | /auth/login | None | Returns access token (1hr) + refresh token (7 days) |
-| POST | /auth/refresh | Refresh token | New access token |
-| GET | /admin/users | Admin key | List all users + usage stats |
-| POST | /admin/users/{id}/deactivate | Admin key | Revoke licence |
-| POST | /admin/users/{id}/reset-usage | Admin key | Reset daily counts |
-
 ---
 
-## Database Schema (Phase 2+)
+## Database Schema
 
 ### Users table
 | Column | Type | Notes |
@@ -298,21 +374,34 @@ data: {"type":"error","message":"Gemini API error 429: quota exceeded"}
 | Id | UUID | Primary key |
 | Email | string | Unique |
 | PasswordHash | string | BCrypt hash |
-| IsActive | bool | Default true (open registration) |
+| IsActive | bool | Global account kill switch (default true) |
 | DailyRequestCount | int | Resets daily |
 | DailyTokenCount | int | Resets daily |
 | LastResetDate | date | Nullable — when counts were last reset |
 | RequestLimit | int? | Nullable — overrides global limit for this user |
 | TokenLimit | int? | Nullable — overrides global limit for this user |
-| Notes | string? | Admin notes (e.g. "paying customer") |
+| Notes | string? | Admin notes |
 | CreatedAt | datetime | |
 
-### RefreshTokens table (Phase 3)
+### UserLicenses table
 | Column | Type | Notes |
 |--------|------|-------|
 | Id | UUID | Primary key |
-| UserId | UUID | FK → Users |
-| TokenHash | string | BCrypt hash of the token |
+| UserId | UUID | FK → Users (cascade delete) |
+| Extension | string | `"Copilot"` or `"SuggestNodes"` (max 64 chars) |
+| IsActive | bool | Per-extension kill switch |
+| StartDate | datetime | |
+| EndDate | datetime? | Null = never expires |
+| CreatedAt | datetime | |
+
+Unique index on `(UserId, Extension)` — one row per user per extension.
+
+### RefreshTokens table
+| Column | Type | Notes |
+|--------|------|-------|
+| Id | UUID | Primary key |
+| UserId | UUID | FK → Users (cascade delete) |
+| TokenHash | string | SHA-256 hash of the raw token |
 | ExpiresAt | datetime | |
 | CreatedAt | datetime | |
 
@@ -323,51 +412,48 @@ data: {"type":"error","message":"Gemini API error 429: quota exceeded"}
 **Prerequisites:** .NET 8 SDK, Gemini API key (free at https://aistudio.google.com/apikey)
 
 ```bash
-# Add API key via User Secrets (never put keys in appsettings files)
+# Add secrets via User Secrets (never put keys in appsettings files)
 cd src/DynamoCopilot.Server
-dotnet user-secrets set "Gemini:ApiKey" "YOUR_KEY_HERE"
+dotnet user-secrets set "Gemini:ApiKey"  "YOUR_KEY_HERE"
+dotnet user-secrets set "Jwt:Secret"     "your-32-char-secret"
+dotnet user-secrets set "Admin:ApiKey"   "your-admin-key"
 
 # Run
 dotnet run
 # → http://localhost:8080
 ```
 
-**Testing with Postman:**
-
-Health check:
+**Migrations (after model changes):**
+```bash
+cd src/DynamoCopilot.Server
+dotnet ef migrations add <MigrationName>
+dotnet ef database update
 ```
-GET http://localhost:8080/health
-```
 
-Chat stream (set response to "Raw" view to see tokens arrive):
+**Postman — grant a licence after registering:**
 ```
-POST http://localhost:8080/api/chat/stream
-Content-Type: application/json
-
-{"messages":[{"role":"user","content":"Write hello world in Python for Dynamo"}]}
+POST /admin/grant
+X-Admin-Key: your-admin-key
+{ "email": "user@example.com", "extension": "Copilot", "months": 12 }
 ```
 
 ---
 
 ## Configuration Reference
 
-All config uses ASP.NET Core's configuration system. **Priority order (highest wins):**
-1. Environment variables — use `__` for nesting: `Gemini__ApiKey=abc`
-2. User secrets — `dotnet user-secrets set "Gemini:ApiKey" "abc"`
-3. `appsettings.Development.json`
-4. `appsettings.json`
-
 | Key | Description | Default |
 |-----|-------------|---------|
 | `Gemini:ApiKey` | Google Gemini API key | **Required** |
 | `Gemini:Model` | Gemini model name | `gemini-2.5-flash` |
 | `Gemini:SystemPrompt` | Override built-in Dynamo prompt | Built-in |
+| `Jwt:Secret` | HMAC-SHA256 signing key (≥32 chars) | **Required** |
+| `Jwt:Issuer` | JWT issuer | `DynamoCopilot` |
+| `Jwt:Audience` | JWT audience | `DynamoCopilot` |
+| `Jwt:AccessTokenExpiryMinutes` | Access token lifetime | `60` |
+| `Admin:ApiKey` | Secret for X-Admin-Key header | **Required** |
 | `PORT` | HTTP port (set by Railway automatically) | `8080` |
 | `ConnectionStrings:DefaultConnection` | PostgreSQL connection string (local dev) | — |
 | `DATABASE_URL` | PostgreSQL URI (set by Railway automatically) | — |
-
-Phase 3 adds: `Jwt:Secret`, `Jwt:Issuer`, `Jwt:Audience`, `Jwt:AccessTokenExpiryMinutes`
-Phase 5 adds: `Admin:ApiKey`
 
 ---
 
@@ -376,11 +462,15 @@ Phase 5 adds: `Admin:ApiKey`
 | Decision | Choice | Reason |
 |----------|--------|--------|
 | Auth | Email + password | OAuth requires browser redirects (awkward in desktop app) + Google app verification for production |
-| Registration | Open + auto-activate | Early tester phase — anyone who signs up gets access |
+| Registration | Open + no licence on register | Anyone can create an account; admin grants licence manually after payment |
+| Licensing | `UserLicenses` junction table | Per-extension expiry dates; scales to many extensions without schema changes |
+| Licence grant workflow | Postman → `POST /admin/grant` by email | No payment system yet — manual Excel tracking; email avoids GUID lookup |
+| Licence check — server | `LicenseFilter` endpoint filter reads JWT `ext` claims | Runs before handler, rejects 403 if extension absent; no DB call per request |
+| Licence check — extension | JWT decoded client-side in `GetGrantedExtensions()` | Instant at login, no extra network call; `/api/me` confirms on panel open |
+| No-licence UX | Panel visible but content replaced with banner | User can see the tool exists (upsell) but can't use it |
 | AI Provider | Gemini 2.5 Flash | Cost-effective pre-revenue; model is a config value, swap without code changes |
 | Rate limiting | Requests/day + tokens/day | Either limit can trigger; whichever hits first applies |
-| Tiers | None (single licence level) | Simplicity for now; add tiers when payment system is added |
-| Admin dashboard | None — use direct DB + admin API endpoints | Fastest path; use TablePlus/DBeaver for ad-hoc queries |
+| Admin dashboard | None — use Postman + admin API | Fastest path; use TablePlus/DBeaver for ad-hoc DB queries |
 | Hosting | Railway | Native PostgreSQL addon, reads PORT + DATABASE_URL automatically |
 | Two extensions, one DLL | Single DLL, two `IViewExtension` classes | Dynamo requires one XML manifest per extension; single DLL avoids duplicating shared services |
 | Cross-extension auth sync | Static events on `AuthService` | Both extensions share the same AppDomain; static events are the correct in-process signal — no IPC needed |
@@ -479,13 +569,23 @@ The JSON wire format is byte-for-byte identical — dictionaries serialize the s
 
 ---
 
+## Adding a New Extension
+
+1. Add the extension ID to `ExtensionConstants.cs` (Core) and `AppConstants.cs` (Server)
+2. Create the server endpoint, apply `.AddEndpointFilter(LicenseFilter.Require(AppConstants.Extensions.NewId))`
+3. In the VM: set `IsLicenceActive = _authService.GetGrantedExtensions().Contains(ExtensionConstants.NewId)` in `OnAuthSuccess()`
+4. In `RefreshUserInfoAsync()`: `var lic = info.GetLicense(ExtensionConstants.NewId)`
+5. In the XAML: bind content rows to `IsLicenceActive`, add the no-licence banner (same pattern as Copilot/SuggestNodes)
+
+---
+
 ## Learning Topics by Phase
 
 | Phase | Concept to learn | Where |
 |-------|-----------------|-------|
 | 1 | Minimal APIs, IAsyncEnumerable, SSE streaming | Done ✅ |
-| 2 | EF Core migrations with PostgreSQL | `dotnet ef migrations add` docs |
-| 3 | **Middleware** (most important new concept) | Microsoft Docs: "ASP.NET Core Middleware" |
-| 3 | JWT Bearer authentication | Microsoft Docs: "JWT Bearer auth in ASP.NET Core" |
-| 4 | Writing custom middleware | Applies Phase 3 knowledge |
+| 2 | EF Core migrations with PostgreSQL | Done ✅ |
+| 3 | JWT Bearer authentication + refresh token rotation | Done ✅ |
+| 4 | Writing custom middleware | Done ✅ |
+| 5 | Endpoint filters, per-resource authorization | Done ✅ |
 | 6 | Docker basics | Docker "Getting Started" guide |

@@ -1,24 +1,23 @@
 using DynamoCopilot.Server.Data;
+using DynamoCopilot.Server.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace DynamoCopilot.Server.Endpoints;
 
 // =============================================================================
-// AdminEndpoints — /admin/* routes for managing users and viewing usage
+// AdminEndpoints — /admin/* routes for managing users and licences
 // =============================================================================
 //
-// SECURITY: Protected by X-Admin-Key header, checked via an endpoint filter.
-//
-// What is an endpoint filter?
-// It's like middleware but scoped to a specific group of endpoints (not all requests).
-// We attach it to the MapGroup("/admin") below, so it runs before EVERY handler in
-// that group. If the key is wrong → 401, the handler never runs.
-//
-// Why not use JWT for admin? You call these from Postman — no login flow needed.
-// A static secret key in a header is the simplest secure approach for personal use.
+// SECURITY: Protected by X-Admin-Key header checked via an endpoint filter.
 //
 // Postman usage:
 //   Add header:  X-Admin-Key: {your Admin:ApiKey value from config}
+//
+// Licence management workflow:
+//   1. User signs up → registers an account (no licence yet)
+//   2. User pays (you record it in your Excel sheet)
+//   3. You call POST /admin/grant with their email, extension, and months
+//   4. To revoke: POST /admin/revoke with their email and extension
 // =============================================================================
 
 public static class AdminEndpoints
@@ -28,16 +27,11 @@ public static class AdminEndpoints
         var group = app.MapGroup("/admin");
 
         // ── ADMIN KEY FILTER ──────────────────────────────────────────────────
-        // AddEndpointFilter attaches a function that runs before every route in this group.
-        // The filter receives the endpoint context and a `next` delegate.
-        // Calling `await next(context)` passes execution to the actual handler.
-        // Returning early (without calling next) short-circuits — the handler never runs.
         group.AddEndpointFilter(async (context, next) =>
         {
             var config = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
             var expectedKey = config["Admin:ApiKey"];
 
-            // If Admin:ApiKey isn't configured, lock everything down
             if (string.IsNullOrWhiteSpace(expectedKey))
                 return Results.Json(new { error = "Admin access is not configured." }, statusCode: 503);
 
@@ -51,17 +45,16 @@ public static class AdminEndpoints
 
         // ── ROUTES ────────────────────────────────────────────────────────────
         group.MapGet("/users", GetUsersAsync);
+        group.MapPost("/grant", GrantLicenseAsync);
+        group.MapPost("/revoke", RevokeLicenseAsync);
         group.MapPost("/users/{id:guid}/activate", ActivateUserAsync);
         group.MapPost("/users/{id:guid}/deactivate", DeactivateUserAsync);
         group.MapPost("/users/{id:guid}/reset-usage", ResetUsageAsync);
         group.MapPatch("/users/{id:guid}/limits", SetLimitsAsync);
-        group.MapPost("/users/{id:guid}/extend-license", ExtendLicenseAsync);
     }
 
     // ── GET /admin/users ──────────────────────────────────────────────────────
-    // Returns all users sorted by newest first, with their current usage stats.
-    // The EffectiveXxxLimit fields show the limit actually in effect (per-user override
-    // or global default), so you can see at a glance what each user's ceiling is.
+    // Returns all users sorted newest-first, including their current licences.
 
     private static async Task<IResult> GetUsersAsync(
         AppDbContext db,
@@ -72,30 +65,130 @@ public static class AdminEndpoints
         var defaultTokenLimit = int.Parse(config["RateLimit:DailyTokenLimit"] ?? "40000");
 
         var now = DateTime.UtcNow;
+
         var users = await db.Users
+            .Include(u => u.Licenses)
             .OrderByDescending(u => u.CreatedAt)
-            .Select(u => new
-            {
-                u.Id,
-                u.Email,
-                u.IsActive,
-                u.DailyRequestCount,
-                u.DailyTokenCount,
-                u.RequestLimit,
-                u.TokenLimit,
-                // Show the effective limit so you can see at a glance what applies
-                EffectiveRequestLimit = u.RequestLimit ?? defaultRequestLimit,
-                EffectiveTokenLimit = u.TokenLimit ?? defaultTokenLimit,
-                u.LastResetDate,
-                u.Notes,
-                u.CreatedAt,
-                u.LicenseStartDate,
-                u.LicenseEndDate,
-                LicenseExpired = u.LicenseEndDate.HasValue && u.LicenseEndDate.Value < now
-            })
             .ToListAsync(ct);
 
-        return Results.Ok(users);
+        return Results.Ok(users.Select(u => new
+        {
+            u.Id,
+            u.Email,
+            u.IsActive,
+            u.DailyRequestCount,
+            u.DailyTokenCount,
+            u.RequestLimit,
+            u.TokenLimit,
+            EffectiveRequestLimit = u.RequestLimit ?? defaultRequestLimit,
+            EffectiveTokenLimit = u.TokenLimit ?? defaultTokenLimit,
+            u.LastResetDate,
+            u.Notes,
+            u.CreatedAt,
+            Licenses = u.Licenses.Select(l => new
+            {
+                l.Extension,
+                l.IsActive,
+                l.StartDate,
+                l.EndDate,
+                Expired = l.EndDate.HasValue && l.EndDate.Value < now
+            })
+        }));
+    }
+
+    // ── POST /admin/grant ─────────────────────────────────────────────────────
+    // Grants (or extends) a licence for a specific extension.
+    // Uses email so you don't need to look up the user's GUID.
+    // If a licence row already exists for that extension it is updated in place
+    // (start date preserved, end date extended from today or the current end date).
+    //
+    // Request body:
+    //   { "email": "user@example.com", "extension": "Copilot", "months": 12 }
+
+    private static async Task<IResult> GrantLicenseAsync(
+        GrantLicenseRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Extension))
+            return Results.BadRequest(new { error = "email and extension are required." });
+
+        if (request.Months <= 0)
+            return Results.BadRequest(new { error = "months must be a positive integer." });
+
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (user is null)
+            return Results.NotFound(new { error = $"No account found for '{email}'." });
+
+        var now = DateTime.UtcNow;
+
+        var existing = await db.UserLicenses
+            .FirstOrDefaultAsync(ul => ul.UserId == user.Id && ul.Extension == request.Extension, ct);
+
+        if (existing is null)
+        {
+            db.UserLicenses.Add(new UserLicense
+            {
+                UserId = user.Id,
+                Extension = request.Extension,
+                IsActive = true,
+                StartDate = now,
+                EndDate = now.AddMonths(request.Months)
+            });
+        }
+        else
+        {
+            // Extend from today if expired, or stack on top of the current end date
+            var baseDate = (existing.EndDate.HasValue && existing.EndDate.Value > now)
+                ? existing.EndDate.Value
+                : now;
+
+            existing.IsActive = true;
+            existing.EndDate = baseDate.AddMonths(request.Months);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        var endDate = existing?.EndDate ?? now.AddMonths(request.Months);
+        return Results.Ok(new
+        {
+            message = $"{request.Extension} licence granted to {email}.",
+            extension = request.Extension,
+            endDate
+        });
+    }
+
+    // ── POST /admin/revoke ────────────────────────────────────────────────────
+    // Revokes a user's licence for a specific extension immediately.
+    // Sets IsActive = false — the row is kept for audit purposes.
+    //
+    // Request body:
+    //   { "email": "user@example.com", "extension": "Copilot" }
+
+    private static async Task<IResult> RevokeLicenseAsync(
+        RevokeLicenseRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Extension))
+            return Results.BadRequest(new { error = "email and extension are required." });
+
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (user is null)
+            return Results.NotFound(new { error = $"No account found for '{email}'." });
+
+        var license = await db.UserLicenses
+            .FirstOrDefaultAsync(ul => ul.UserId == user.Id && ul.Extension == request.Extension, ct);
+
+        if (license is null)
+            return Results.NotFound(new { error = $"{email} has no {request.Extension} licence to revoke." });
+
+        license.IsActive = false;
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new { message = $"{request.Extension} licence revoked for {email}." });
     }
 
     // ── POST /admin/users/{id}/activate ───────────────────────────────────────
@@ -129,8 +222,6 @@ public static class AdminEndpoints
     }
 
     // ── POST /admin/users/{id}/reset-usage ────────────────────────────────────
-    // Manually resets a user's daily counters — useful if you want to give
-    // someone extra requests before the midnight automatic reset.
 
     private static async Task<IResult> ResetUsageAsync(
         Guid id, AppDbContext db, CancellationToken ct)
@@ -148,12 +239,11 @@ public static class AdminEndpoints
     }
 
     // ── PATCH /admin/users/{id}/limits ────────────────────────────────────────
-    // Override the global rate limits for a specific user.
-    // Send null for RequestLimit or TokenLimit to revert to the global default.
+    // Override global rate limits for a specific user.
+    // Send null to revert to the global default.
     //
-    // Request body example:
+    // Request body:
     //   { "requestLimit": 100, "tokenLimit": 150000, "notes": "trusted beta tester" }
-    //   { "requestLimit": null, "tokenLimit": null }   ← revert to global defaults
 
     private static async Task<IResult> SetLimitsAsync(
         Guid id,
@@ -168,7 +258,6 @@ public static class AdminEndpoints
         user.RequestLimit = request.RequestLimit;
         user.TokenLimit = request.TokenLimit;
 
-        // Only update Notes if a value was provided (don't wipe existing notes)
         if (request.Notes is not null)
             user.Notes = request.Notes;
 
@@ -182,52 +271,8 @@ public static class AdminEndpoints
             user.Notes
         });
     }
-
-    // ── POST /admin/users/{id}/extend-license ─────────────────────────────────
-    // Extends (or sets) a user's LicenseEndDate by the given number of months.
-    // If the licence has already expired, the new end date is calculated from today.
-    // If the licence is still active, the months are added to the current end date.
-    //
-    // Request body example:
-    //   { "months": 6 }
-    //   { "months": 12 }
-
-    private static async Task<IResult> ExtendLicenseAsync(
-        Guid id,
-        ExtendLicenseRequest request,
-        AppDbContext db,
-        CancellationToken ct)
-    {
-        if (request.Months <= 0)
-            return Results.BadRequest(new { error = "Months must be a positive integer." });
-
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
-        if (user is null)
-            return Results.NotFound(new { error = "User not found." });
-
-        var now = DateTime.UtcNow;
-
-        // Base the extension off today if expired/unset, or off the current end date if still valid.
-        var baseDate = (user.LicenseEndDate.HasValue && user.LicenseEndDate.Value > now)
-            ? user.LicenseEndDate.Value
-            : now;
-
-        user.LicenseStartDate ??= now;
-        user.LicenseEndDate = baseDate.AddMonths(request.Months);
-
-        await db.SaveChangesAsync(ct);
-
-        return Results.Ok(new
-        {
-            message = $"Licence extended for {user.Email}.",
-            user.LicenseStartDate,
-            user.LicenseEndDate
-        });
-    }
 }
 
-/// <summary>Request body for PATCH /admin/users/{id}/limits</summary>
+public record GrantLicenseRequest(string Email, string Extension, int Months);
+public record RevokeLicenseRequest(string Email, string Extension);
 public record SetLimitsRequest(int? RequestLimit, int? TokenLimit, string? Notes);
-
-/// <summary>Request body for POST /admin/users/{id}/extend-license</summary>
-public record ExtendLicenseRequest(int Months);

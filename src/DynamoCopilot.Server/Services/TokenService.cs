@@ -48,21 +48,24 @@ public class TokenService
     /// The server can verify the signature without storing the token — any tampered token
     /// will have an invalid signature and be rejected.
     /// </summary>
-    public string GenerateAccessToken(User user)
+    // grantedExtensions: the list of extension names the user currently has an active
+    // licence for (e.g. ["Copilot", "SuggestNodes"]). Each name becomes a separate
+    // "ext" claim so the extension can check httpContext.User.FindAll("ext").
+    // Multiple claims with the same name is the standard JWT way to encode an array.
+    public string GenerateAccessToken(User user, IEnumerable<string> grantedExtensions)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        // Claims = the data embedded in the token payload.
-        // These are readable by anyone (base64, not encrypted), so don't put sensitive data here.
-        // Sub (subject) is the user's ID — this is how we identify the user on each request.
-        // Jti (JWT ID) is a unique ID per token — useful for token blacklisting in the future.
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        foreach (var ext in grantedExtensions)
+            claims.Add(new Claim("ext", ext));
 
         var token = new JwtSecurityToken(
             issuer: _issuer,

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace DynamoCopilot.Core.Models
@@ -27,6 +28,25 @@ namespace DynamoCopilot.Core.Models
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
+    // Per-extension licence info inside UserInfo
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    public sealed class UserLicenseInfo
+    {
+        [JsonPropertyName("extension")]
+        public string Extension { get; set; } = string.Empty;
+
+        [JsonPropertyName("isActive")]
+        public bool IsActive { get; set; }
+
+        [JsonPropertyName("endDate")]
+        public DateTime? EndDate { get; set; }
+
+        [JsonPropertyName("expired")]
+        public bool Expired { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // Live usage data returned by GET /api/me
     // ─────────────────────────────────────────────────────────────────────────────
 
@@ -41,14 +61,12 @@ namespace DynamoCopilot.Core.Models
         [JsonPropertyName("isActive")]
         public bool IsActive { get; set; }
 
-        [JsonPropertyName("licenseStartDate")]
-        public DateTime? LicenseStartDate { get; set; }
+        [JsonPropertyName("licenses")]
+        public List<UserLicenseInfo> Licenses { get; set; } = new List<UserLicenseInfo>();
 
-        [JsonPropertyName("licenseEndDate")]
-        public DateTime? LicenseEndDate { get; set; }
-
-        [JsonPropertyName("licenseExpired")]
-        public bool LicenseExpired { get; set; }
+        // Helper: find the licence row for a specific extension (null if not found).
+        public UserLicenseInfo? GetLicense(string extensionId) =>
+            Licenses.Find(l => string.Equals(l.Extension, extensionId, System.StringComparison.Ordinal));
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ namespace DynamoCopilot.Server.Data;
 public class AppDbContext : DbContext
 {
     public DbSet<User> Users { get; set; } = null!;
+    public DbSet<UserLicense> UserLicenses { get; set; } = null!;
     public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
     public DbSet<DynamoNode> DynamoNodes { get; set; } = null!;
 
@@ -77,6 +78,24 @@ public class AppDbContext : DbContext
                   .HasMethod("ivfflat")
                   .HasOperators("vector_cosine_ops")
                   .HasStorageParameter("lists", 100);
+        });
+
+        // ── USER LICENSES ──────────────────────────────────────────────────────
+        modelBuilder.Entity<UserLicense>(entity =>
+        {
+            entity.HasKey(ul => ul.Id);
+            entity.Property(ul => ul.Id).HasDefaultValueSql("gen_random_uuid()");
+
+            entity.Property(ul => ul.Extension).HasMaxLength(64).IsRequired();
+            entity.Property(ul => ul.CreatedAt).HasDefaultValueSql("NOW()");
+
+            // One row per user per extension — prevents duplicate grants
+            entity.HasIndex(ul => new { ul.UserId, ul.Extension }).IsUnique();
+
+            entity.HasOne(ul => ul.User)
+                  .WithMany(u => u.Licenses)
+                  .HasForeignKey(ul => ul.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── REFRESH TOKENS ─────────────────────────────────────────────────────

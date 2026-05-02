@@ -32,10 +32,9 @@ public class User
     // Example hash: "$2a$11$rBnqhUMFuHqhj8c9jXJq8uVbZv3geFvGV9g..."
     public string PasswordHash { get; set; } = string.Empty;
 
-    // LICENSE CONTROL
-    // IsActive = the on/off switch for the user's licence.
-    // Set to true on registration (open registration policy for early testers).
-    // Flip to false via the admin API to revoke access immediately.
+    // ACCOUNT STATE
+    // IsActive = the global kill switch for the account (banned / deactivated).
+    // Individual extension access is controlled via the UserLicenses table.
     // The rate limit middleware (Phase 4) will check this on every request.
     public bool IsActive { get; set; } = true;
 
@@ -64,11 +63,8 @@ public class User
     // e.g. "referred by John", "paying customer from March", "test account"
     public string? Notes { get; set; }
 
-    // LICENSE VALIDITY
-    // Set on registration and enforced by RateLimitMiddleware and the login endpoint.
-    // Admins can extend LicenseEndDate via POST /admin/users/{id}/extend-license.
-    public DateTime? LicenseStartDate { get; set; }
-    public DateTime? LicenseEndDate { get; set; }
+    // Per-extension licences — see UserLicense.cs
+    public ICollection<UserLicense> Licenses { get; set; } = [];
 
     // AUDIT
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

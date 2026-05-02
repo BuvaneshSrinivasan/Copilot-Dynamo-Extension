@@ -1204,8 +1204,24 @@
                 </StackPanel>
             </Border>
 
+            <!-- ── No-licence notice (Row 2-4, shown when IsLicenceActive=false) ── -->
+            <Border Grid.Row="2" Grid.RowSpan="3"
+                    Visibility="{Binding IsLicenceActive, Converter={StaticResource InvBoolToVis}}"
+                    VerticalAlignment="Center" Margin="28,0">
+                <StackPanel HorizontalAlignment="Center">
+                    <Path Data="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"
+                          Fill="{StaticResource ErrorBrush}" Width="32" Height="32"
+                          Stretch="Uniform" HorizontalAlignment="Center" Margin="0,0,0,16" Opacity="0.8"/>
+                    <TextBlock Text="{Binding LicenseMessage}"
+                               Foreground="{StaticResource TextBrush}"
+                               FontSize="13" TextWrapping="Wrap" TextAlignment="Center"
+                               LineHeight="20"/>
+                </StackPanel>
+            </Border>
+
             <!-- ── Chat area (Row 2) ──────────────────────────────── -->
             <ScrollViewer Grid.Row="2"
+                          Visibility="{Binding IsLicenceActive, Converter={StaticResource BoolToVis}}"
                           x:Name="ChatScrollViewer"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
@@ -1359,7 +1375,8 @@
                     Background="#252526"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="0,1,0,0"
-                    Padding="8,8">
+                    Padding="8,8"
+                    Visibility="{Binding IsLicenceActive, Converter={StaticResource BoolToVis}}">
                 <StackPanel>
 
                     <!-- Text input + Send button -->
