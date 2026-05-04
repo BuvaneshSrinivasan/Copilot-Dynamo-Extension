@@ -70,6 +70,14 @@ var jwtSecret = builder.Configuration["Jwt:Secret"]
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddCookie("AdminCookie", opts =>
+    {
+        opts.LoginPath = "/Dashboard/Login";
+        opts.ExpireTimeSpan = TimeSpan.FromHours(8);
+        opts.Cookie.Name = "dc_admin";
+        opts.Cookie.HttpOnly = true;
+        opts.Cookie.SameSite = SameSiteMode.Strict;
+    })
     .AddJwtBearer(opts =>
     {
         opts.TokenValidationParameters = new TokenValidationParameters
@@ -88,6 +96,7 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddRazorPages();
 
 // ── STEP 2: BUILD ─────────────────────────────────────────────────────────────
 
@@ -142,6 +151,7 @@ app.MapChatEndpoints();   // POST /api/chat/stream  (requires JWT)
 app.MapUserEndpoints();   // GET  /api/me            (requires JWT)
 app.MapAdminEndpoints();  // GET+POST /admin/users/* (requires X-Admin-Key header)
 app.MapNodeEndpoints();   // POST /api/nodes/suggest (requires JWT)
+app.MapRazorPages();      // /Dashboard/* admin UI pages
 
 app.Run();
 

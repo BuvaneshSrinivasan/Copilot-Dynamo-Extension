@@ -1,0 +1,107 @@
+@page
+@model DynamoCopilot.Server.Pages.Dashboard.UsersModel
+@{
+    ViewData["Title"] = "Users";
+    ViewData["Page"] = "Users";
+}
+
+<!-- Search + filter bar -->
+<form method="get" class="d-flex gap-2 mb-4 align-items-center flex-wrap">
+    <div class="input-group" style="max-width:360px">
+        <span class="input-group-text bg-white border-end-0">
+            <i class="bi bi-search text-muted" style="font-size:0.85rem"></i>
+        </span>
+        <input type="text" name="search" value="@Model.Search"
+               class="form-control border-start-0" placeholder="Search by email…" />
+    </div>
+    @{
+        var selActive   = Model.Status == "active"   ? "selected" : null;
+        var selInactive = Model.Status == "inactive" ? "selected" : null;
+    }
+    <select name="status" class="form-select" style="max-width:150px" onchange="this.form.submit()">
+        <option value="">All Status</option>
+        <option value="active"   selected="@selActive">Active</option>
+        <option value="inactive" selected="@selInactive">Inactive</option>
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm px-3">Search</button>
+    @if (!string.IsNullOrEmpty(Model.Search) || !string.IsNullOrEmpty(Model.Status))
+    {
+        <a asp-page="/Dashboard/Users" class="btn btn-outline-secondary btn-sm">Clear</a>
+    }
+    <span class="text-muted ms-auto" style="font-size:0.8rem">@Model.Users.Count user(s)</span>
+</form>
+
+<!-- Table -->
+<div class="panel">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr class="text-muted" style="font-size:0.75rem; background:#f8fafc">
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Licences</th>
+                    <th>Requests Today</th>
+                    <th>Tokens Today</th>
+                    <th>Joined</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Model.Users)
+                {
+                    <tr style="font-size:0.85rem">
+                        <td class="fw-medium">@u.Email</td>
+                        <td>
+                            <span class="badge @(u.IsActive ? "badge-on" : "badge-off")">
+                                @(u.IsActive ? "Active" : "Inactive")
+                            </span>
+                        </td>
+                        <td>
+                            @foreach (var lic in u.Licenses)
+                            {
+                                var cls = !lic.IsActive ? "badge-off" : lic.Expired ? "badge-exp" : "badge-on";
+                                <span class="badge @cls me-1">@lic.Extension</span>
+                            }
+                            @if (!u.Licenses.Any())
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+                        <td>
+                            <div class="small">@u.DailyRequestCount / @u.EffectiveReqLimit</div>
+                            <div class="progress progress-xs mt-1" style="max-width:70px">
+                                <div class="progress-bar bg-primary"
+                                     style="width:@(Math.Min(100, u.DailyRequestCount * 100 / Math.Max(1, u.EffectiveReqLimit)))%">
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="small">@u.DailyTokenCount.ToString("N0") / @u.EffectiveTokLimit.ToString("N0")</div>
+                            <div class="progress progress-xs mt-1" style="max-width:70px">
+                                <div class="progress-bar bg-warning"
+                                     style="width:@(Math.Min(100, u.DailyTokenCount * 100 / Math.Max(1, u.EffectiveTokLimit)))%">
+                                </div>
+                            </div>
+                        </td>
+                        <td class="text-muted">@u.CreatedAt.ToString("dd MMM yyyy")</td>
+                        <td>
+                            <a asp-page="/Dashboard/UserDetail" asp-route-id="@u.Id"
+                               class="btn btn-sm btn-outline-primary" style="font-size:0.78rem">
+                                <i class="bi bi-pencil-square"></i> Manage
+                            </a>
+                        </td>
+                    </tr>
+                }
+                @if (!Model.Users.Any())
+                {
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-5">
+                            <i class="bi bi-people d-block mb-2" style="font-size:2rem;opacity:.3"></i>
+                            No users found
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

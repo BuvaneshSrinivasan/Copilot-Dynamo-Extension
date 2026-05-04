@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<UserLicense> UserLicenses { get; set; } = null!;
     public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
     public DbSet<DynamoNode> DynamoNodes { get; set; } = null!;
+    public DbSet<UsageLog> UsageLogs { get; set; } = null!;
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -94,6 +95,19 @@ public class AppDbContext : DbContext
 
             entity.HasOne(ul => ul.User)
                   .WithMany(u => u.Licenses)
+                  .HasForeignKey(ul => ul.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── USAGE LOGS ────────────────────────────────────────────────────────
+        modelBuilder.Entity<UsageLog>(entity =>
+        {
+            entity.HasKey(ul => ul.Id);
+            entity.Property(ul => ul.Id).HasDefaultValueSql("gen_random_uuid()");
+            // One row per user per day
+            entity.HasIndex(ul => new { ul.UserId, ul.Date }).IsUnique();
+            entity.HasOne(ul => ul.User)
+                  .WithMany()
                   .HasForeignKey(ul => ul.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
         });

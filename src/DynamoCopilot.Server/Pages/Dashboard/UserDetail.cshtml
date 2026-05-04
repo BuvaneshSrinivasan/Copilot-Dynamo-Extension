@@ -1,0 +1,289 @@
+@page "{id:guid}"
+@model DynamoCopilot.Server.Pages.Dashboard.UserDetailModel
+@{
+    ViewData["Title"] = "User Detail";
+    ViewData["Page"] = "Users";
+    var user = Model.DetailUser!;
+    var now  = DateTime.UtcNow;
+}
+
+<div class="mb-3">
+    <a asp-page="/Dashboard/Users" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Users
+    </a>
+</div>
+
+<!-- Header -->
+<div class="d-flex align-items-start justify-content-between mb-4 flex-wrap gap-3">
+    <div>
+        <div class="d-flex align-items-center gap-3 mb-1 flex-wrap">
+            <h2 class="mb-0 fw-bold" style="font-size:1.3rem">@user.Email</h2>
+            <span class="badge px-3 py-2 @(user.IsActive ? "badge-on" : "badge-off")">
+                @(user.IsActive ? "Active" : "Inactive")
+            </span>
+        </div>
+        <div class="text-muted" style="font-size:0.82rem">
+            Member since @user.CreatedAt.ToString("dd MMMM yyyy")
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        @if (user.IsActive)
+        {
+            <form method="post" asp-page-handler="Deactivate" asp-route-id="@Model.Id">
+                <button class="btn btn-outline-danger btn-sm"
+                        onclick="return confirm('Deactivate @user.Email?')">
+                    <i class="bi bi-slash-circle"></i> Deactivate
+                </button>
+            </form>
+        }
+        else
+        {
+            <form method="post" asp-page-handler="Activate" asp-route-id="@Model.Id">
+                <button class="btn btn-success btn-sm">
+                    <i class="bi bi-check-circle"></i> Activate
+                </button>
+            </form>
+        }
+    </div>
+</div>
+
+@if (TempData["Success"] is string success)
+{
+    <div class="alert alert-success alert-dismissible mb-4 py-2" style="font-size:0.875rem">
+        <i class="bi bi-check-circle me-1"></i> @success
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger alert-dismissible mb-4 py-2" style="font-size:0.875rem">
+        <i class="bi bi-exclamation-circle me-1"></i> @error
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<!-- Usage summary cards -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="panel p-3 text-center">
+            <div class="text-muted mb-1" style="font-size:0.75rem">Requests Today</div>
+            <div class="fw-bold" style="font-size:1.6rem">@Model.TodayRequests</div>
+            <div class="text-muted" style="font-size:0.72rem">
+                limit: @(user.RequestLimit?.ToString() ?? Model.DefaultRequestLimit.ToString()) / day
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="panel p-3 text-center">
+            <div class="text-muted mb-1" style="font-size:0.75rem">Tokens Today</div>
+            <div class="fw-bold" style="font-size:1.6rem">@Model.TodayTokens.ToString("N0")</div>
+            <div class="text-muted" style="font-size:0.72rem">no cap</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="panel p-3 text-center">
+            <div class="text-muted mb-1" style="font-size:0.75rem">Requests This Month</div>
+            <div class="fw-bold" style="font-size:1.6rem">@Model.MonthRequests.ToString("N0")</div>
+            <div class="text-muted" style="font-size:0.72rem">@DateTime.UtcNow.ToString("MMMM yyyy")</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="panel p-3 text-center">
+            <div class="text-muted mb-1" style="font-size:0.75rem">Tokens This Month</div>
+            <div class="fw-bold" style="font-size:1.6rem">@Model.MonthTokens.ToString("N0")</div>
+            <div class="text-muted" style="font-size:0.72rem">@DateTime.UtcNow.ToString("MMMM yyyy")</div>
+        </div>
+    </div>
+</div>
+
+<!-- Daily usage chart -->
+<div class="panel mb-3">
+    <div class="panel-header d-flex justify-content-between align-items-center">
+        Daily Usage — Last 30 Days
+        <form method="post" asp-page-handler="ResetUsage" asp-route-id="@Model.Id">
+            <button class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem"
+                    onclick="return confirm('Reset today\'s counters?')">
+                <i class="bi bi-arrow-counterclockwise"></i> Reset today
+            </button>
+        </form>
+    </div>
+    <div class="panel-body">
+        <canvas id="usageChart" height="80"></canvas>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- Licences -->
+    <div class="col-lg-6">
+        <div class="panel">
+            <div class="panel-header">Licences</div>
+            <div class="panel-body">
+                @foreach (var ext in new[] { "Copilot", "SuggestNodes" })
+                {
+                    var lic      = user.Licenses.FirstOrDefault(l => l.Extension == ext);
+                    var isValid  = lic is { IsActive: true } && (lic.EndDate == null || lic.EndDate > now);
+                    var isExpired = lic?.EndDate.HasValue == true && lic.EndDate.Value < now;
+
+                    <div class="rounded-3 p-3 mb-2" style="background:#f8fafc; border:1px solid #e2e8f0">
+                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                            <div>
+                                <div class="fw-medium" style="font-size:0.9rem">@ext</div>
+                                @if (lic is null)
+                                {
+                                    <div class="small text-muted">No licence granted</div>
+                                }
+                                else if (!lic.IsActive)
+                                {
+                                    <div class="small text-danger">Revoked</div>
+                                }
+                                else if (isExpired)
+                                {
+                                    <div class="small" style="color:#b45309">Expired @lic.EndDate?.ToString("dd MMM yyyy")</div>
+                                }
+                                else
+                                {
+                                    <div class="small text-success">
+                                        Active · Expires @(lic.EndDate?.ToString("dd MMM yyyy") ?? "Never")
+                                    </div>
+                                }
+                            </div>
+                            <div class="d-flex gap-2">
+                                @if (isValid)
+                                {
+                                    <form method="post" asp-page-handler="Revoke" asp-route-id="@Model.Id">
+                                        <input type="hidden" name="RevokeExtension" value="@ext" />
+                                        <button class="btn btn-sm btn-outline-danger" style="font-size:0.78rem"
+                                                onclick="return confirm('Revoke @ext licence?')">Revoke</button>
+                                    </form>
+                                }
+                                <button class="btn btn-sm btn-primary" style="font-size:0.78rem"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#grant-@ext.Replace(" ","")">
+                                    <i class="bi bi-plus"></i> Grant
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="collapse mb-3" id="grant-@ext.Replace(" ","")">
+                        <div class="rounded-3 p-3" style="background:#eef2ff; border:1px solid #c7d2fe">
+                            <form method="post" asp-page-handler="Grant" asp-route-id="@Model.Id"
+                                  class="d-flex align-items-end gap-2">
+                                <input type="hidden" name="GrantExtension" value="@ext" />
+                                <div>
+                                    <label class="form-label mb-1" style="font-size:0.78rem">Months</label>
+                                    <input type="number" name="GrantMonths" class="form-control form-control-sm"
+                                           value="12" min="1" max="120" style="width:80px" />
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary">Grant @ext</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom request limit + notes -->
+    <div class="col-lg-6">
+        <div class="panel mb-3">
+            <div class="panel-header">Custom Request Limit</div>
+            <div class="panel-body">
+                <p class="text-muted mb-3" style="font-size:0.82rem">
+                    Override the global default of <strong>@Model.DefaultRequestLimit requests/day</strong> for this user.
+                    Leave blank to use the global default. Token usage is always unlimited (BYOK).
+                </p>
+                <form method="post" asp-page-handler="SaveLimits" asp-route-id="@Model.Id">
+                    <div class="d-flex align-items-end gap-3 mb-3">
+                        <div class="flex-grow-1">
+                            <label class="form-label" style="font-size:0.8rem">Requests / day</label>
+                            <input type="number" name="CustomRequestLimit"
+                                   class="form-control"
+                                   value="@user.RequestLimit"
+                                   placeholder="@Model.DefaultRequestLimit (default)"
+                                   min="0" />
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                        @if (user.RequestLimit.HasValue)
+                        {
+                            <button type="submit" asp-page-handler="ClearLimits"
+                                    class="btn btn-outline-secondary btn-sm"
+                                    onclick="return confirm('Reset to global default?')">
+                                Reset to default
+                            </button>
+                        }
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">Admin Notes</div>
+            <div class="panel-body">
+                <form method="post" asp-page-handler="SaveNotes" asp-route-id="@Model.Id">
+                    <textarea name="Notes" class="form-control mb-3" rows="3"
+                              placeholder="Notes about this user…"
+                              style="font-size:0.875rem; resize:vertical">@user.Notes</textarea>
+                    <button type="submit" class="btn btn-primary btn-sm">Save Notes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const data = @Html.Raw(Model.ChartJson);
+
+new Chart(document.getElementById('usageChart'), {
+    type: 'bar',
+    data: {
+        labels: data.map(d => d.date),
+        datasets: [
+            {
+                label: 'Requests',
+                data: data.map(d => d.requests),
+                backgroundColor: 'rgba(99,102,241,0.75)',
+                borderRadius: 3,
+                yAxisID: 'yReq'
+            },
+            {
+                label: 'Tokens',
+                data: data.map(d => d.tokens),
+                type: 'line',
+                borderColor: '#f59e0b',
+                backgroundColor: 'rgba(245,158,11,0.1)',
+                borderWidth: 2,
+                pointRadius: 3,
+                fill: true,
+                tension: 0.3,
+                yAxisID: 'yTok'
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { position: 'top', labels: { usePointStyle: true, color: '#64748b' } }
+        },
+        scales: {
+            x: { ticks: { color: '#94a3b8', maxTicksLimit: 10 }, grid: { display: false } },
+            yReq: {
+                type: 'linear', position: 'left', beginAtZero: true,
+                ticks: { precision: 0, color: '#6366f1' },
+                grid: { color: '#f1f5f9' },
+                title: { display: true, text: 'Requests', color: '#6366f1', font: { size: 11 } }
+            },
+            yTok: {
+                type: 'linear', position: 'right', beginAtZero: true,
+                ticks: { color: '#f59e0b' },
+                grid: { drawOnChartArea: false },
+                title: { display: true, text: 'Tokens', color: '#f59e0b', font: { size: 11 } }
+            }
+        }
+    }
+});
+</script>
+}

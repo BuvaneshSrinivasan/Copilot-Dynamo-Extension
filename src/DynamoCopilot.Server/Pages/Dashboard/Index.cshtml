@@ -1,0 +1,209 @@
+@page
+@model DynamoCopilot.Server.Pages.Dashboard.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+    ViewData["Page"] = "Dashboard";
+}
+
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+    <div class="col-xl col-md-6 col-sm-6">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#eef2ff">
+                <i class="bi bi-people" style="color:#6366f1"></i>
+            </div>
+            <div>
+                <div class="stat-label">Total Users</div>
+                <div class="stat-value">@Model.TotalUsers</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl col-md-6 col-sm-6">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#dcfce7">
+                <i class="bi bi-person-check" style="color:#16a34a"></i>
+            </div>
+            <div>
+                <div class="stat-label">Active Accounts</div>
+                <div class="stat-value">@Model.ActiveUsers</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl col-md-6 col-sm-6">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">
+                <i class="bi bi-award" style="color:#2563eb"></i>
+            </div>
+            <div>
+                <div class="stat-label">Active Licences</div>
+                <div class="stat-value">@Model.ActiveLicences</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl col-md-6 col-sm-6">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">
+                <i class="bi bi-lightning" style="color:#d97706"></i>
+            </div>
+            <div>
+                <div class="stat-label">Tokens Today</div>
+                <div class="stat-value">@Model.TotalTokensToday.ToString("N0")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl col-md-6 col-sm-6">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#f3e8ff">
+                <i class="bi bi-send" style="color:#7c3aed"></i>
+            </div>
+            <div>
+                <div class="stat-label">Requests Today</div>
+                <div class="stat-value">@Model.TotalRequestsToday</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts row -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="panel h-100">
+            <div class="panel-header">User Registrations — Last 6 Months</div>
+            <div class="panel-body">
+                <canvas id="regChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="panel h-100">
+            <div class="panel-header">Account Status</div>
+            <div class="panel-body d-flex align-items-center justify-content-center" style="min-height:180px">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tables row -->
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="panel">
+            <div class="panel-header">
+                Recent Signups
+                <a asp-page="/Dashboard/Users" class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem">View all</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead>
+                        <tr class="text-muted" style="font-size:0.75rem">
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Joined</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in Model.RecentUsers)
+                        {
+                            <tr style="font-size:0.85rem">
+                                <td>@u.Email</td>
+                                <td>
+                                    <span class="badge @(u.IsActive ? "badge-on" : "badge-off")">
+                                        @(u.IsActive ? "Active" : "Inactive")
+                                    </span>
+                                </td>
+                                <td class="text-muted">@u.CreatedAt.ToString("dd MMM yyyy")</td>
+                            </tr>
+                        }
+                        @if (!Model.RecentUsers.Any())
+                        {
+                            <tr>
+                                <td colspan="3" class="text-center text-muted py-4">No users yet</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="panel">
+            <div class="panel-header">Top Token Users Today</div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead>
+                        <tr class="text-muted" style="font-size:0.75rem">
+                            <th>Email</th>
+                            <th>Tokens</th>
+                            <th>Requests</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in Model.TopUsers)
+                        {
+                            <tr style="font-size:0.85rem">
+                                <td>@u.Email</td>
+                                <td>@u.DailyTokenCount.ToString("N0")</td>
+                                <td>@u.DailyRequestCount</td>
+                            </tr>
+                        }
+                        @if (!Model.TopUsers.Any())
+                        {
+                            <tr>
+                                <td colspan="3" class="text-center text-muted py-4">No usage recorded today</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const regData   = @Html.Raw(Model.RegistrationsByMonthJson);
+const statusData = @Html.Raw(Model.StatusDataJson);
+
+new Chart(document.getElementById('regChart'), {
+    type: 'bar',
+    data: {
+        labels: regData.map(d => d.label),
+        datasets: [{
+            label: 'New Users',
+            data: regData.map(d => d.count),
+            backgroundColor: 'rgba(99,102,241,0.75)',
+            borderRadius: 5,
+            borderSkipped: false
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: true, ticks: { precision: 0, color: '#94a3b8' }, grid: { color: '#f1f5f9' } },
+            x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+        }
+    }
+});
+
+new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Active', 'Inactive'],
+        datasets: [{
+            data: [statusData.active, statusData.inactive],
+            backgroundColor: ['#22c55e', '#f87171'],
+            borderWidth: 0,
+            hoverOffset: 4
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, color: '#64748b' } }
+        },
+        cutout: '68%'
+    }
+});
+</script>
+}

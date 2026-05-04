@@ -63,19 +63,24 @@ obj/Debug/net48/
  .NETFramework,Version=v4.8.AssemblyAttributes.cs
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
- Views/CopilotPanelView.g.cs
+ Views/
+  CopilotPanelView.g.cs
+  SuggestNodesPanelView.g.cs
 Services/
  CopilotLogger.cs
  DynamoPackageDownloader.cs
  OnnxEmbeddingService.cs
  PackageStateService.cs
+SuggestNodesViewExtension.cs
 ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
  SuggestNodesPanelViewModel.cs
-Views/CopilotPanelView.xaml.cs
+Views/
+ CopilotPanelView.xaml.cs
+ SuggestNodesPanelView.xaml.cs
 
 [metadataReferences]
 ../
@@ -217,19 +222,24 @@ obj/Debug/net8.0-windows/
  .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
- Views/CopilotPanelView.g.cs
+ Views/
+  CopilotPanelView.g.cs
+  SuggestNodesPanelView.g.cs
 Services/
  CopilotLogger.cs
  DynamoPackageDownloader.cs
  OnnxEmbeddingService.cs
  PackageStateService.cs
+SuggestNodesViewExtension.cs
 ViewModels/
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
  SuggestNodesPanelViewModel.cs
-Views/CopilotPanelView.xaml.cs
+Views/
+ CopilotPanelView.xaml.cs
+ SuggestNodesPanelView.xaml.cs
 
 [metadataReferences]
 ../

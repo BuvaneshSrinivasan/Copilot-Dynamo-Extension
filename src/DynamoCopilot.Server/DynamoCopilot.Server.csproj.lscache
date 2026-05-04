@@ -53,6 +53,7 @@ TemporaryDependencyNodeTargetIdentifier=net8.0
 /warnaserror+:NU1605,SYSLIB0011
 
 [sourceFiles]
+AppConstants.cs
 Data/AppDbContext.cs
 Endpoints/
  AdminEndpoints.cs
@@ -60,6 +61,7 @@ Endpoints/
  ChatEndpoints.cs
  NodeEndpoints.cs
  UserEndpoints.cs
+Filters/LicenseFilter.cs
 Middleware/RateLimitMiddleware.cs
 Migrations/
  20260411091017_InitialCreate.cs
@@ -70,17 +72,31 @@ Migrations/
  20260414101854_AddDynamoNodes.Designer.cs
  20260423070055_AddLicenseDates.cs
  20260423070055_AddLicenseDates.Designer.cs
+ 20260502133105_AddUserLicenses.cs
+ 20260502133105_AddUserLicenses.Designer.cs
+ 20260504150527_AddUsageLogs.cs
+ 20260504150527_AddUsageLogs.Designer.cs
  AppDbContextModelSnapshot.cs
 Models/
  AuthRequests.cs
  ChatRequest.cs
  DynamoNode.cs
  RefreshToken.cs
+ UsageLog.cs
  User.cs
+ UserLicense.cs
 obj/Debug/net8.0/
  .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
  DynamoCopilot.Server.AssemblyInfo.cs
  DynamoCopilot.Server.GlobalUsings.g.cs
+ DynamoCopilot.Server.RazorAssemblyInfo.cs
+Pages/Dashboard/
+ DashboardPageModel.cs
+ Index.cshtml.cs
+ Login.cshtml.cs
+ Logout.cshtml.cs
+ UserDetail.cshtml.cs
+ Users.cshtml.cs
 Program.cs
 Services/
  EmbeddingService.cs
@@ -448,3 +464,25 @@ Services/
 [analyzerConfigFiles]
 <DOTNET>/sdk/10.0.300-preview.0.26177.108/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
 obj/Debug/net8.0/DynamoCopilot.Server.GeneratedMSBuildEditorConfig.editorconfig
+
+[additionalFiles]
+Pages/Dashboard/
+ Index.cshtml
+ Login.cshtml
+ Logout.cshtml
+ UserDetail.cshtml
+ Users.cshtml
+ _Layout.cshtml
+ _ViewStart.cshtml
+Pages/_ViewImports.cshtml
+
+[dynamicFiles]
+Pages/Dashboard/
+ Index.cshtml
+ Login.cshtml
+ Logout.cshtml
+ UserDetail.cshtml
+ Users.cshtml
+ _Layout.cshtml
+ _ViewStart.cshtml
+Pages/_ViewImports.cshtml

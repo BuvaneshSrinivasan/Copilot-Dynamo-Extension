@@ -56,6 +56,7 @@ TemporaryDependencyNodeTargetIdentifier=net48
 /warnaserror+:NU1605
 
 [sourceFiles]
+ExtensionConstants.cs
 Models/
  AiProvider.cs
  AuthModels.cs
@@ -179,6 +180,7 @@ TemporaryDependencyNodeTargetIdentifier=net8.0-windows
 /warnaserror+:NU1605,SYSLIB0011
 
 [sourceFiles]
+ExtensionConstants.cs
 Models/
  AiProvider.cs
  AuthModels.cs
