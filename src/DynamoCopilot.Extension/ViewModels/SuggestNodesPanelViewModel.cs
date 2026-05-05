@@ -37,8 +37,10 @@ namespace DynamoCopilot.Extension.ViewModels
         private int       _tokensUsed;
         private DateTime? _licenseEndDate;
 
+        public string Name { get; private set; }
+
         public string LicenseMessage =>
-            $"Sorry, you don't have a licence for Suggest Nodes.\n\n" +
+            $"Sorry, you don't have a licence for {Name}.\n\n" +
             $"Contact us at {ExtensionConstants.SupportEmail}";
 
         // ── Node suggest state ────────────────────────────────────────────────
@@ -49,8 +51,34 @@ namespace DynamoCopilot.Extension.ViewModels
 
         // ── Collections ───────────────────────────────────────────────────────
 
-        public ObservableCollection<NodeSuggestionCardViewModel> NodeSuggestions { get; }
+        public ObservableCollection<NodeSuggestionCardViewModel> InstalledNodeSuggestions { get; }
             = new ObservableCollection<NodeSuggestionCardViewModel>();
+
+        public ObservableCollection<NodeSuggestionCardViewModel> OnlineNodeSuggestions { get; }
+            = new ObservableCollection<NodeSuggestionCardViewModel>();
+
+        // ── Group expand state ────────────────────────────────────────────────
+
+        private bool _isInstalledGroupExpanded = true;
+        private bool _isOnlineGroupExpanded    = true;
+
+        public bool IsInstalledGroupExpanded
+        {
+            get => _isInstalledGroupExpanded;
+            private set { _isInstalledGroupExpanded = value; OnPropertyChanged(); }
+        }
+
+        public bool IsOnlineGroupExpanded
+        {
+            get => _isOnlineGroupExpanded;
+            private set { _isOnlineGroupExpanded = value; OnPropertyChanged(); }
+        }
+
+        public bool HasInstalledNodes => InstalledNodeSuggestions.Count > 0;
+        public bool HasOnlineNodes    => OnlineNodeSuggestions.Count > 0;
+
+        public void ToggleInstalledGroup() => IsInstalledGroupExpanded = !IsInstalledGroupExpanded;
+        public void ToggleOnlineGroup()    => IsOnlineGroupExpanded    = !IsOnlineGroupExpanded;
 
         // ── Auth bindings ─────────────────────────────────────────────────────
 
@@ -171,7 +199,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
         public bool CanSearchNodes => !_isSearchingNodes;
 
-        public bool ShowNodeHint => !_isSearchingNodes && NodeSuggestions.Count == 0;
+        public bool ShowNodeHint => !_isSearchingNodes && InstalledNodeSuggestions.Count == 0 && OnlineNodeSuggestions.Count == 0;
 
         public string StatusMessage
         {
@@ -188,8 +216,10 @@ namespace DynamoCopilot.Extension.ViewModels
             LocalNodeSearchService   localSearchService,
             ViewLoadedParams         dynParams,
             PackageStateService      packageState,
-            DynamoPackageDownloader  downloader)
+            DynamoPackageDownloader  downloader,
+            string                   name = "Suggest Nodes")
         {
+            Name                = name;
             _authService        = authService        ?? throw new ArgumentNullException(nameof(authService));
             _localSearchService = localSearchService ?? throw new ArgumentNullException(nameof(localSearchService));
             _dynParams          = dynParams          ?? throw new ArgumentNullException(nameof(dynParams));
@@ -259,8 +289,12 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private void ClearAuthState()
         {
-            foreach (var card in NodeSuggestions) card.Dispose();
-            NodeSuggestions.Clear();
+            foreach (var card in InstalledNodeSuggestions) card.Dispose();
+            InstalledNodeSuggestions.Clear();
+            foreach (var card in OnlineNodeSuggestions) card.Dispose();
+            OnlineNodeSuggestions.Clear();
+            OnPropertyChanged(nameof(HasInstalledNodes));
+            OnPropertyChanged(nameof(HasOnlineNodes));
             ShowUserPanel  = false;
             IsLoggedIn     = false;
             IsRegisterMode = false;
@@ -322,8 +356,14 @@ namespace DynamoCopilot.Extension.ViewModels
             }
 
             IsSearchingNodes = true;
-            foreach (var card in NodeSuggestions) card.Dispose();
-            NodeSuggestions.Clear();
+            foreach (var card in InstalledNodeSuggestions) card.Dispose();
+            InstalledNodeSuggestions.Clear();
+            foreach (var card in OnlineNodeSuggestions) card.Dispose();
+            OnlineNodeSuggestions.Clear();
+            IsInstalledGroupExpanded = true;
+            IsOnlineGroupExpanded    = true;
+            OnPropertyChanged(nameof(HasInstalledNodes));
+            OnPropertyChanged(nameof(HasOnlineNodes));
             OnPropertyChanged(nameof(ShowNodeHint));
             ShowStatus("Searching nodes…");
 
@@ -332,12 +372,22 @@ namespace DynamoCopilot.Extension.ViewModels
                 var results = await _localSearchService.SearchAsync(query);
 
                 foreach (var node in results)
-                    NodeSuggestions.Add(new NodeSuggestionCardViewModel(
-                        node, _packageState, _downloader, InsertNodeToCanvas));
+                {
+                    var card = new NodeSuggestionCardViewModel(
+                        node, _packageState, _downloader, InsertNodeToCanvas);
+                    if (_packageState.IsInstalled(node.PackageName))
+                        InstalledNodeSuggestions.Add(card);
+                    else
+                        OnlineNodeSuggestions.Add(card);
+                }
 
-                StatusMessage = results.Count == 0
+                OnPropertyChanged(nameof(HasInstalledNodes));
+                OnPropertyChanged(nameof(HasOnlineNodes));
+
+                int total = InstalledNodeSuggestions.Count + OnlineNodeSuggestions.Count;
+                StatusMessage = total == 0
                     ? "No matching nodes found."
-                    : $"Found {results.Count} node{(results.Count == 1 ? "" : "s")}.";
+                    : $"Found {total} node{(total == 1 ? "" : "s")}.";
             }
             catch (Exception ex)
             {

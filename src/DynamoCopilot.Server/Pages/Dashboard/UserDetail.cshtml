@@ -44,6 +44,12 @@
                 </button>
             </form>
         }
+        <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Id">
+            <button class="btn btn-danger btn-sm"
+                    onclick="return confirm('Permanently delete @user.Email and all their data? This cannot be undone.')">
+                <i class="bi bi-trash"></i> Delete Account
+            </button>
+        </form>
     </div>
 </div>
 

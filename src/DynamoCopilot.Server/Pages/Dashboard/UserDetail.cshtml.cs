@@ -171,6 +171,19 @@ public class UserDetailModel : DashboardPageModel
         return RedirectToPage(new { Id });
     }
 
+    public async Task<IActionResult> OnPostDeleteAsync()
+    {
+        var user = await _db.Users.FindAsync(Id);
+        if (user is null) return NotFound();
+
+        // Cascade delete removes UserLicenses, RefreshTokens, and UsageLogs automatically
+        _db.Users.Remove(user);
+        await _db.SaveChangesAsync();
+
+        TempData["Success"] = $"Account for {user.Email} permanently deleted.";
+        return RedirectToPage("/Dashboard/Users");
+    }
+
     private async Task LoadAsync()
     {
         DefaultRequestLimit = _config.GetValue<int>("RateLimit:DailyRequestLimit", 200);

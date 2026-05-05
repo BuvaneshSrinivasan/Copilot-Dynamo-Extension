@@ -143,9 +143,11 @@ namespace DynamoCopilot.Extension.ViewModels
         private int       _tokensUsed;
         private DateTime? _licenseEndDate;
 
+        public string Name { get; private set; }
+
         // Shown in the main panel when the user is logged in but has no licence.
         public string LicenseMessage =>
-            $"Sorry, you don't have a licence for Dynamo Co-pilot.\n\n" +
+            $"Sorry, you don't have a licence for {Name}.\n\n" +
             $"Contact us at {ExtensionConstants.SupportEmail}";
 
         // ── Chat state ────────────────────────────────────────────────────────────
@@ -269,8 +271,10 @@ namespace DynamoCopilot.Extension.ViewModels
             DynamoCopilotSettings settings,
             AuthService           authService,
             ChatHistoryService    historyService,
-            ViewLoadedParams      dynParams)
+            ViewLoadedParams      dynParams,
+            string                name = "Dynamo Co-pilot")
         {
+            Name         = name;
             _settings    = settings;
             _authService = authService;
             _historyService = historyService;

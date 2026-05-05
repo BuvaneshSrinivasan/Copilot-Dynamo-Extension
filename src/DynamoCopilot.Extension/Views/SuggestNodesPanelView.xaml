@@ -202,6 +202,210 @@
             </Setter>
         </Style>
 
+        <Style x:Key="GroupHeaderBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#2D2D2D"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="NodeCardTemplate" DataType="{x:Type vm:NodeSuggestionCardViewModel}">
+            <Border Margin="6,4"
+                    CornerRadius="8"
+                    Background="{StaticResource BgAssistBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1">
+                <StackPanel>
+
+                    <!-- Card header -->
+                    <Grid Margin="10,8,10,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}"
+                                       FontWeight="SemiBold" FontSize="13"
+                                       Foreground="{StaticResource TextBrush}"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding PackageName}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       Margin="0,1,0,0"/>
+                        </StackPanel>
+                        <!-- Score badge -->
+                        <Border Grid.Column="1"
+                                Background="#1A2A3A" CornerRadius="10"
+                                Padding="7,2" VerticalAlignment="Top" Margin="8,0,0,0">
+                            <TextBlock Text="{Binding ScoreText}"
+                                       Foreground="{StaticResource AccentBrush}"
+                                       FontSize="10" FontFamily="Consolas"/>
+                        </Border>
+                    </Grid>
+
+                    <!-- AI reason -->
+                    <Border Margin="10,0,10,6"
+                            CornerRadius="5"
+                            Background="#0F2030"
+                            BorderBrush="#1E3A50"
+                            BorderThickness="1"
+                            Padding="8,6"
+                            Visibility="{Binding HasReason, Converter={StaticResource BoolToVis}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="&#x2728; " FontSize="12" VerticalAlignment="Top"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Reason}"
+                                       Foreground="{StaticResource TextBrush}"
+                                       FontSize="12" FontStyle="Italic" TextWrapping="Wrap"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Expand / collapse -->
+                    <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                  HorizontalAlignment="Left"
+                                  Margin="10,0,10,8"
+                                  FontSize="11" Cursor="Hand"
+                                  Visibility="{Binding HasPorts, Converter={StaticResource BoolToVis}}">
+                        <ToggleButton.Style>
+                            <Style TargetType="ToggleButton">
+                                <Setter Property="Content"         Value="&#x25B6; Show details"/>
+                                <Setter Property="Background"      Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Foreground"      Value="{StaticResource MutedBrush}"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="{TemplateBinding Background}" Padding="0,2">
+                                                <ContentPresenter/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter Property="Content"   Value="&#x25BC; Hide details"/>
+                                        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ToggleButton.Style>
+                    </ToggleButton>
+
+                    <!-- Detail section -->
+                    <StackPanel Margin="10,0,10,10"
+                                Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding Description}"
+                                   FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                   TextWrapping="Wrap" Margin="0,0,0,6"
+                                   Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}"/>
+                        <Grid Visibility="{Binding HasPorts, Converter={StaticResource BoolToVis}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="In: "  FontSize="11" Foreground="{StaticResource MutedBrush}" FontFamily="Consolas" Margin="0,0,4,2"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InputPorts}"  FontSize="11" Foreground="{StaticResource TextBrush}" FontFamily="Consolas" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Out: " FontSize="11" Foreground="{StaticResource MutedBrush}" FontFamily="Consolas" Margin="0,0,4,0"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OutputPorts}" FontSize="11" Foreground="{StaticResource TextBrush}" FontFamily="Consolas" TextWrapping="Wrap"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Status text -->
+                    <TextBlock Margin="10,0,10,4"
+                               Text="{Binding StatusText}"
+                               FontSize="11" Foreground="#E07070"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- Action buttons -->
+                    <Grid Margin="10,4,10,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Button Grid.Column="0"
+                                Command="{Binding InsertCommand}"
+                                Content="Insert"
+                                Padding="10,4" FontSize="12" Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background"      Value="#1A6E3C"/>
+                                    <Setter Property="Foreground"      Value="#FFFFFF"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled"   Value="False"><Setter Property="Background" Value="#1E3A2A"/><Setter Property="Foreground" Value="#4A7A5A"/></Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#22924F"/></Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+
+                        <Button Grid.Column="2"
+                                Command="{Binding DownloadCommand}"
+                                Content="Download"
+                                Padding="10,4" FontSize="12" Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background"      Value="#1A3A6E"/>
+                                    <Setter Property="Foreground"      Value="#FFFFFF"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled"   Value="False"><Setter Property="Background" Value="#1A2A3A"/><Setter Property="Foreground" Value="#4A6A8A"/></Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#1E4A92"/></Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </Grid>
+
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
     </UserControl.Resources>
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -225,7 +429,7 @@
                             HorizontalAlignment="Center" 
                             Margin="0,0,0,10" 
                             Opacity="0.9"/>
-                    <TextBlock Text="Suggest Nodes"
+                    <TextBlock Text="{Binding Name}"
                                FontSize="18" FontWeight="Bold"
                                Foreground="{StaticResource TextBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,4"/>
@@ -376,7 +580,7 @@
                             HorizontalAlignment="Center" 
                             Margin="0,0,7,0" 
                             Opacity="0.9"/>
-                        <TextBlock Text="Suggest Nodes"
+                        <TextBlock Text="{Binding Name}"
                                    Foreground="{StaticResource TextBrush}"
                                    FontWeight="SemiBold" FontSize="13"
                                    VerticalAlignment="Center"/>
@@ -568,7 +772,7 @@
                             HorizontalAlignment="Center" 
                             Margin="0,0,0,10" 
                             Opacity="0.9"/>
-                        <TextBlock Text="Suggest Nodes"
+                        <TextBlock Text="{Binding Name}"
                                    FontSize="15" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextBrush}"
                                    HorizontalAlignment="Center" Margin="0,0,0,6"/>
@@ -577,194 +781,91 @@
                                    Text="Describe what you need — find the best Dynamo nodes from 78 000+ indexed packages."/>
                     </StackPanel>
 
-                    <!-- Node suggestion cards -->
-                    <ItemsControl ItemsSource="{Binding NodeSuggestions}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:NodeSuggestionCardViewModel}">
-                                <Border Margin="6,4"
-                                        CornerRadius="8"
-                                        Background="{StaticResource BgAssistBrush}"
-                                        BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="1">
-                                    <StackPanel>
+                    <!-- Node suggestion grouped results -->
+                    <StackPanel>
 
-                                        <!-- Card header -->
-                                        <Grid Margin="10,8,10,4">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Name}"
-                                                           FontWeight="SemiBold" FontSize="13"
-                                                           Foreground="{StaticResource TextBrush}"
-                                                           TextWrapping="Wrap"/>
-                                                <TextBlock Text="{Binding PackageName}"
-                                                           FontSize="11"
-                                                           Foreground="{StaticResource MutedBrush}"
-                                                           Margin="0,1,0,0"/>
-                                            </StackPanel>
-                                            <!-- Score badge -->
-                                            <Border Grid.Column="1"
-                                                    Background="#1A2A3A" CornerRadius="10"
-                                                    Padding="7,2" VerticalAlignment="Top" Margin="8,0,0,0">
-                                                <TextBlock Text="{Binding ScoreText}"
-                                                           Foreground="{StaticResource AccentBrush}"
-                                                           FontSize="10" FontFamily="Consolas"/>
-                                            </Border>
-                                        </Grid>
+                        <!-- ── Installed Packages ── -->
+                        <StackPanel Visibility="{Binding HasInstalledNodes, Converter={StaticResource BoolToVis}}">
+                            <Button Style="{StaticResource GroupHeaderBtn}"
+                                    Padding="10,7" Margin="0,4,0,0"
+                                    Click="OnToggleInstalledGroupClick">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Margin="0,0,7,0" FontSize="10" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text"       Value="&#x25B6;"/>
+                                                <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInstalledGroupExpanded}" Value="True">
+                                                        <Setter Property="Text" Value="&#x25BC;"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="1" Text="Installed Packages"
+                                               FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <Border Grid.Column="2" Background="#1A2A1A" CornerRadius="8"
+                                            Padding="6,2" VerticalAlignment="Center" Margin="8,0,0,0">
+                                        <TextBlock Text="{Binding InstalledNodeSuggestions.Count}"
+                                                   Foreground="#73C991" FontSize="10" FontFamily="Consolas"/>
+                                    </Border>
+                                </Grid>
+                            </Button>
+                            <ItemsControl ItemsSource="{Binding InstalledNodeSuggestions}"
+                                          ItemTemplate="{StaticResource NodeCardTemplate}"
+                                          Visibility="{Binding IsInstalledGroupExpanded, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
 
-                                        <!-- AI reason -->
-                                        <Border Margin="10,0,10,6"
-                                                CornerRadius="5"
-                                                Background="#0F2030"
-                                                BorderBrush="#1E3A50"
-                                                BorderThickness="1"
-                                                Padding="8,6"
-                                                Visibility="{Binding HasReason, Converter={StaticResource BoolToVis}}">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="&#x2728; " FontSize="12" VerticalAlignment="Top"/>
-                                                <TextBlock Grid.Column="1"
-                                                           Text="{Binding Reason}"
-                                                           Foreground="{StaticResource TextBrush}"
-                                                           FontSize="12" FontStyle="Italic" TextWrapping="Wrap"/>
-                                            </Grid>
-                                        </Border>
+                        <!-- ── Online Packages ── -->
+                        <StackPanel Visibility="{Binding HasOnlineNodes, Converter={StaticResource BoolToVis}}">
+                            <Button Style="{StaticResource GroupHeaderBtn}"
+                                    Padding="10,7" Margin="0,4,0,0"
+                                    Click="OnToggleOnlineGroupClick">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Margin="0,0,7,0" FontSize="10" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text"       Value="&#x25B6;"/>
+                                                <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsOnlineGroupExpanded}" Value="True">
+                                                        <Setter Property="Text" Value="&#x25BC;"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="1" Text="Online Packages"
+                                               FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <Border Grid.Column="2" Background="#1A2A3A" CornerRadius="8"
+                                            Padding="6,2" VerticalAlignment="Center" Margin="8,0,0,0">
+                                        <TextBlock Text="{Binding OnlineNodeSuggestions.Count}"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontSize="10" FontFamily="Consolas"/>
+                                    </Border>
+                                </Grid>
+                            </Button>
+                            <ItemsControl ItemsSource="{Binding OnlineNodeSuggestions}"
+                                          ItemTemplate="{StaticResource NodeCardTemplate}"
+                                          Visibility="{Binding IsOnlineGroupExpanded, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
 
-                                        <!-- Expand / collapse -->
-                                        <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay}"
-                                                      HorizontalAlignment="Left"
-                                                      Margin="10,0,10,8"
-                                                      FontSize="11" Cursor="Hand"
-                                                      Visibility="{Binding HasPorts, Converter={StaticResource BoolToVis}}">
-                                            <ToggleButton.Style>
-                                                <Style TargetType="ToggleButton">
-                                                    <Setter Property="Content"         Value="&#x25B6; Show details"/>
-                                                    <Setter Property="Background"      Value="Transparent"/>
-                                                    <Setter Property="BorderThickness" Value="0"/>
-                                                    <Setter Property="Foreground"      Value="{StaticResource MutedBrush}"/>
-                                                    <Setter Property="Template">
-                                                        <Setter.Value>
-                                                            <ControlTemplate TargetType="ToggleButton">
-                                                                <Border Background="{TemplateBinding Background}" Padding="0,2">
-                                                                    <ContentPresenter/>
-                                                                </Border>
-                                                            </ControlTemplate>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                    <Style.Triggers>
-                                                        <Trigger Property="IsChecked" Value="True">
-                                                            <Setter Property="Content"   Value="&#x25BC; Hide details"/>
-                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-                                                        </Trigger>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                                        </Trigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </ToggleButton.Style>
-                                        </ToggleButton>
-
-                                        <!-- Detail section -->
-                                        <StackPanel Margin="10,0,10,10"
-                                                    Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock Text="{Binding Description}"
-                                                       FontSize="12" Foreground="{StaticResource MutedBrush}"
-                                                       TextWrapping="Wrap" Margin="0,0,0,6"
-                                                       Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}"/>
-                                            <Grid Visibility="{Binding HasPorts, Converter={StaticResource BoolToVis}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
-                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="In: "  FontSize="11" Foreground="{StaticResource MutedBrush}" FontFamily="Consolas" Margin="0,0,4,2"/>
-                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InputPorts}"  FontSize="11" Foreground="{StaticResource TextBrush}" FontFamily="Consolas" TextWrapping="Wrap"/>
-                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Out: " FontSize="11" Foreground="{StaticResource MutedBrush}" FontFamily="Consolas" Margin="0,0,4,0"/>
-                                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OutputPorts}" FontSize="11" Foreground="{StaticResource TextBrush}" FontFamily="Consolas" TextWrapping="Wrap"/>
-                                            </Grid>
-                                        </StackPanel>
-
-                                        <!-- Status text -->
-                                        <TextBlock Margin="10,0,10,4"
-                                                   Text="{Binding StatusText}"
-                                                   FontSize="11" Foreground="#E07070"
-                                                   TextWrapping="Wrap"
-                                                   Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
-
-                                        <!-- Action buttons -->
-                                        <Grid Margin="10,4,10,10">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <Button Grid.Column="0"
-                                                    Command="{Binding InsertCommand}"
-                                                    Content="Insert"
-                                                    Padding="10,4" FontSize="12" Cursor="Hand">
-                                                <Button.Style>
-                                                    <Style TargetType="Button">
-                                                        <Setter Property="Background"      Value="#1A6E3C"/>
-                                                        <Setter Property="Foreground"      Value="#FFFFFF"/>
-                                                        <Setter Property="BorderThickness" Value="0"/>
-                                                        <Setter Property="Template">
-                                                            <Setter.Value>
-                                                                <ControlTemplate TargetType="Button">
-                                                                    <Border Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
-                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                                    </Border>
-                                                                </ControlTemplate>
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                        <Style.Triggers>
-                                                            <Trigger Property="IsEnabled"   Value="False"><Setter Property="Background" Value="#1E3A2A"/><Setter Property="Foreground" Value="#4A7A5A"/></Trigger>
-                                                            <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#22924F"/></Trigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
-                                            </Button>
-
-                                            <Button Grid.Column="2"
-                                                    Command="{Binding DownloadCommand}"
-                                                    Content="Download"
-                                                    Padding="10,4" FontSize="12" Cursor="Hand">
-                                                <Button.Style>
-                                                    <Style TargetType="Button">
-                                                        <Setter Property="Background"      Value="#1A3A6E"/>
-                                                        <Setter Property="Foreground"      Value="#FFFFFF"/>
-                                                        <Setter Property="BorderThickness" Value="0"/>
-                                                        <Setter Property="Template">
-                                                            <Setter.Value>
-                                                                <ControlTemplate TargetType="Button">
-                                                                    <Border Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
-                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                                    </Border>
-                                                                </ControlTemplate>
-                                                            </Setter.Value>
-                                                        </Setter>
-                                                        <Style.Triggers>
-                                                            <Trigger Property="IsEnabled"   Value="False"><Setter Property="Background" Value="#1A2A3A"/><Setter Property="Foreground" Value="#4A6A8A"/></Trigger>
-                                                            <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#1E4A92"/></Trigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Button.Style>
-                                            </Button>
-                                        </Grid>
-
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    </StackPanel>
 
                 </StackPanel>
             </ScrollViewer>

@@ -9,7 +9,7 @@ namespace DynamoCopilot.Server.Endpoints;
 // AuthEndpoints — /auth/* routes
 // =============================================================================
 //
-// POST /auth/register  → create account (open registration, no licence granted)
+// POST /auth/register  → create account; auto-grants a free SuggestNodes licence (no expiry)
 // POST /auth/login     → verify credentials, return access + refresh tokens
 // POST /auth/refresh   → exchange refresh token for a new access token
 //
@@ -52,10 +52,22 @@ public static class AuthEndpoints
             Email = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
             IsActive = true
-            // No licence is granted on registration — admin grants via POST /admin/grant
+        };
+
+        // SuggestNodes is free for all registered users — grant it automatically with no
+        // expiry date. It stays active for as long as the account itself is active.
+        // Copilot still requires a manual admin grant.
+        var suggestNodesLicense = new UserLicense
+        {
+            UserId = user.Id,
+            Extension = AppConstants.Extensions.SuggestNodes,
+            IsActive = true,
+            StartDate = DateTime.UtcNow,
+            EndDate = null
         };
 
         db.Users.Add(user);
+        db.UserLicenses.Add(suggestNodesLicense);
         await db.SaveChangesAsync(ct);
 
         return Results.Created($"/auth/users/{user.Id}", new { message = "Account created. You can now log in." });

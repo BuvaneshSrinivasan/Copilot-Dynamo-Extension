@@ -52,6 +52,14 @@ namespace DynamoCopilot.Extension.Views
             RegisterConfirmPasswordBox.Clear();
         }
 
+        // ── Group toggles ─────────────────────────────────────────────────────
+
+        private void OnToggleInstalledGroupClick(object sender, RoutedEventArgs e)
+            => _viewModel.ToggleInstalledGroup();
+
+        private void OnToggleOnlineGroupClick(object sender, RoutedEventArgs e)
+            => _viewModel.ToggleOnlineGroup();
+
         // ── Node search ───────────────────────────────────────────────────────
 
         private async void OnNodeSearchClick(object sender, RoutedEventArgs e)

@@ -120,7 +120,7 @@ Both VMs subscribe in their constructor and **unsubscribe in `Shutdown()`** to p
 ### Copilot vs Suggest Nodes — feature boundary
 
 - **Copilot** (`CopilotPanelViewModel`) — chat only: streaming LLM responses, Python code extraction, Insert/Fix-Error, spec-first flow, AI settings, user info panel
-- **Suggest Nodes** (`SuggestNodesPanelViewModel`) — node search only: ONNX vector search via `LocalNodeSearchService`, node cards with Download/Insert, user icon (top-right) reveals user info flyout
+- **Suggest Nodes** (`SuggestNodesPanelViewModel`) — node search only: ONNX vector search via `LocalNodeSearchService` (capped at `TopK = 100` results), node cards with Download/Insert, user icon (top-right) reveals user info flyout. Results are split into two expandable groups: **Installed Packages** (`InstalledNodeSuggestions`) and **Online Packages** (`OnlineNodeSuggestions`), partitioned by `PackageStateService.IsInstalled()`. Both groups live inside a single shared `ScrollViewer`; there is no per-group scrollbar.
 
 **Node suggestion cards do NOT appear in the Copilot chat.** If the AI mentions a node name in prose, it stays as text — no interactive cards. All node card functionality is isolated to the Suggest Nodes extension.
 
@@ -510,7 +510,7 @@ X-Admin-Key: your-admin-key
 | Decision | Choice | Reason |
 |----------|--------|--------|
 | Auth | Email + password | OAuth requires browser redirects (awkward in desktop app) + Google app verification for production |
-| Registration | Open + no licence on register | Anyone can create an account; admin grants licence manually after payment |
+| Registration | Open + free SuggestNodes on register | Anyone can create an account and gets SuggestNodes automatically (no expiry); Copilot requires manual admin grant after payment |
 | Licensing | `UserLicenses` junction table | Per-extension expiry dates; scales to many extensions without schema changes |
 | Licence grant workflow | Postman → `POST /admin/grant` by email | No payment system yet — manual Excel tracking; email avoids GUID lookup |
 | Licence check — server | `LicenseFilter` endpoint filter reads JWT `ext` claims | Runs before handler, rejects 403 if extension absent; no DB call per request |

@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Controls;
 using Dynamo.Wpf.Extensions;
+using DynamoCopilot.Core;
 using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.Extension.Services;
@@ -13,7 +14,7 @@ namespace DynamoCopilot.Extension
     {
         public string UniqueId => "7A3E2F14-C591-4D8B-A7F2-90B3E1D54C6A";
         public string Name     => "Dynamo Co-pilot";
-        private string TabName => "BimEra";
+        private string TabName => ExtensionConstants.TabName;
 
         private CopilotPanelViewModel? _viewModel;
         private CopilotPanelView?      _view;
@@ -118,7 +119,7 @@ namespace DynamoCopilot.Extension
             var historyService = new ChatHistoryService();
 
             _viewModel = new CopilotPanelViewModel(
-                settings, _authService, historyService, loadedParams);
+                settings, _authService, historyService, loadedParams, Name);
 
             _view = new CopilotPanelView(_viewModel);
         }

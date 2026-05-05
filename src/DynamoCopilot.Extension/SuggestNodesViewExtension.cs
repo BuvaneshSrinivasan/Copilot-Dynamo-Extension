@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using System.Windows.Controls;
 using Dynamo.Wpf.Extensions;
+using DynamoCopilot.Core;
 using DynamoCopilot.Core.Services;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.Extension.Services;
@@ -13,8 +14,8 @@ namespace DynamoCopilot.Extension
     public sealed class SuggestNodesViewExtension : IViewExtension
     {
         public string UniqueId => "A1F3D5B7-E924-4C8A-9D2F-6B0E8A4C2D1F";
-        public string Name     => "Suggest Nodes";
-        private string TabName => "BimEra";
+        public string Name     => "Find your node";
+        private string TabName => ExtensionConstants.TabName;
 
         private SuggestNodesPanelViewModel? _viewModel;
         private SuggestNodesPanelView?      _view;
@@ -91,7 +92,7 @@ namespace DynamoCopilot.Extension
             var downloader      = new DynamoPackageDownloader(dynamoViewModel);
 
             _viewModel = new SuggestNodesPanelViewModel(
-                _authService, localSearch, loadedParams, packageState, downloader);
+                _authService, localSearch, loadedParams, packageState, downloader, Name);
 
             _view = new SuggestNodesPanelView(_viewModel);
         }
