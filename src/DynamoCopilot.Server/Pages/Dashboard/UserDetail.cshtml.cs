@@ -176,11 +176,11 @@ public class UserDetailModel : DashboardPageModel
         var user = await _db.Users.FindAsync(Id);
         if (user is null) return NotFound();
 
-        // Cascade delete removes UserLicenses, RefreshTokens, and UsageLogs automatically
+        var email = user.Email;
         _db.Users.Remove(user);
         await _db.SaveChangesAsync();
 
-        TempData["Success"] = $"Account for {user.Email} permanently deleted.";
+        TempData["Success"] = $"Account for {email} permanently deleted.";
         return RedirectToPage("/Dashboard/Users");
     }
 

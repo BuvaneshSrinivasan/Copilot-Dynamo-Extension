@@ -5,6 +5,21 @@
     ViewData["Page"] = "Users";
 }
 
+@if (TempData["Success"] is string success)
+{
+    <div class="alert alert-success alert-dismissible mb-3 py-2" style="font-size:0.875rem">
+        <i class="bi bi-check-circle me-1"></i> @success
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger alert-dismissible mb-3 py-2" style="font-size:0.875rem">
+        <i class="bi bi-exclamation-circle me-1"></i> @error
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
 <!-- Search + filter bar -->
 <form method="get" class="d-flex gap-2 mb-4 align-items-center flex-wrap">
     <div class="input-group" style="max-width:360px">
@@ -29,7 +44,48 @@
         <a asp-page="/Dashboard/Users" class="btn btn-outline-secondary btn-sm">Clear</a>
     }
     <span class="text-muted ms-auto" style="font-size:0.8rem">@Model.Users.Count user(s)</span>
+    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newUserModal">
+        <i class="bi bi-person-plus"></i> New User
+    </button>
 </form>
+
+<!-- New User Modal -->
+<div class="modal fade" id="newUserModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius:12px; border:none">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-600" style="font-size:1rem; font-weight:600">
+                    <i class="bi bi-person-plus me-2" style="color:#6366f1"></i>Create User Account
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" asp-page-handler="Create">
+                <div class="modal-body pt-3">
+                    <p class="text-muted mb-3" style="font-size:0.82rem">
+                        Account is created with SuggestNodes access. Grant Copilot separately from the user detail page.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label" style="font-size:0.82rem; font-weight:500">Email</label>
+                        <input type="email" name="NewEmail" class="form-control"
+                               placeholder="user@example.com" required />
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label" style="font-size:0.82rem; font-weight:500">Password</label>
+                        <input type="password" name="NewPassword" class="form-control"
+                               placeholder="Min. 8 characters" minlength="8" required />
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary btn-sm"
+                            data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-check2"></i> Create Account
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Table -->
 <div class="panel">
@@ -76,12 +132,8 @@
                             </div>
                         </td>
                         <td>
-                            <div class="small">@u.DailyTokenCount.ToString("N0") / @u.EffectiveTokLimit.ToString("N0")</div>
-                            <div class="progress progress-xs mt-1" style="max-width:70px">
-                                <div class="progress-bar bg-warning"
-                                     style="width:@(Math.Min(100, u.DailyTokenCount * 100 / Math.Max(1, u.EffectiveTokLimit)))%">
-                                </div>
-                            </div>
+                            <div class="small">@u.DailyTokenCount.ToString("N0")</div>
+                            <div class="text-muted" style="font-size:0.7rem">no cap</div>
                         </td>
                         <td class="text-muted">@u.CreatedAt.ToString("dd MMM yyyy")</td>
                         <td>

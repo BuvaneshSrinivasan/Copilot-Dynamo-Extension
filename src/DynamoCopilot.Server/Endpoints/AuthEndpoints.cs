@@ -47,23 +47,26 @@ public static class AuthEndpoints
         if (await db.Users.AnyAsync(u => u.Email == email, ct))
             return Results.Conflict(new { error = "An account with this email already exists." });
 
+        // Generate GUID client-side so the FK on the licence row is set correctly
+        // before SaveChangesAsync. user.Id is Guid.Empty until the DB INSERT runs,
+        // so UserId = user.Id would write Guid.Empty → FK violation.
         var user = new User
         {
-            Email = email,
+            Id           = Guid.NewGuid(),
+            Email        = email,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            IsActive = true
+            IsActive     = true
         };
 
-        // SuggestNodes is free for all registered users — grant it automatically with no
-        // expiry date. It stays active for as long as the account itself is active.
+        // SuggestNodes is free — grant automatically on register with no expiry.
         // Copilot still requires a manual admin grant.
         var suggestNodesLicense = new UserLicense
         {
-            UserId = user.Id,
+            UserId    = user.Id,
             Extension = AppConstants.Extensions.SuggestNodes,
-            IsActive = true,
+            IsActive  = true,
             StartDate = DateTime.UtcNow,
-            EndDate = null
+            EndDate   = null
         };
 
         db.Users.Add(user);

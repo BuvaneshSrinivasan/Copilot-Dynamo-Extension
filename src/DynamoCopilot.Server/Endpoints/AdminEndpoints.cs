@@ -1,5 +1,6 @@
 using DynamoCopilot.Server.Data;
 using DynamoCopilot.Server.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DynamoCopilot.Server.Endpoints;
@@ -45,12 +46,14 @@ public static class AdminEndpoints
 
         // ── ROUTES ────────────────────────────────────────────────────────────
         group.MapGet("/users", GetUsersAsync);
+        group.MapPost("/users", CreateUserAsync);
         group.MapPost("/grant", GrantLicenseAsync);
         group.MapPost("/revoke", RevokeLicenseAsync);
         group.MapPost("/users/{id:guid}/activate", ActivateUserAsync);
         group.MapPost("/users/{id:guid}/deactivate", DeactivateUserAsync);
         group.MapPost("/users/{id:guid}/reset-usage", ResetUsageAsync);
         group.MapPatch("/users/{id:guid}/limits", SetLimitsAsync);
+        group.MapDelete("/users", DeleteUserAsync);
     }
 
     // ── GET /admin/users ──────────────────────────────────────────────────────
@@ -271,8 +274,80 @@ public static class AdminEndpoints
             user.Notes
         });
     }
+
+    // ── POST /admin/users ────────────────────────────────────────────────────
+    // Creates an account directly without going through the self-registration flow.
+    // SuggestNodes is auto-granted (same as /auth/register). Copilot requires a
+    // separate POST /admin/grant call.
+    //
+    // Request body:
+    //   { "email": "user@example.com", "password": "securepassword123" }
+
+    private static async Task<IResult> CreateUserAsync(
+        CreateUserRequest request, AppDbContext db, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || !request.Email.Contains('@'))
+            return Results.BadRequest(new { error = "A valid email address is required." });
+
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
+            return Results.BadRequest(new { error = "Password must be at least 8 characters." });
+
+        var email = request.Email.Trim().ToLowerInvariant();
+
+        if (await db.Users.AnyAsync(u => u.Email == email, ct))
+            return Results.Conflict(new { error = $"An account already exists for '{email}'." });
+
+        var user = new User
+        {
+            Id           = Guid.NewGuid(),
+            Email        = email,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+            IsActive     = true
+        };
+
+        db.Users.Add(user);
+        db.UserLicenses.Add(new UserLicense
+        {
+            UserId    = user.Id,
+            Extension = AppConstants.Extensions.SuggestNodes,
+            IsActive  = true,
+            StartDate = DateTime.UtcNow,
+            EndDate   = null
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Created($"/admin/users/{user.Id}", new
+        {
+            message = $"Account created for {email}.",
+            userId  = user.Id
+        });
+    }
+
+    // ── DELETE /admin/users/{id} ──────────────────────────────────────────────
+    // Permanently removes the account. Cascade delete on FK handles UserLicenses,
+    // RefreshTokens, and UsageLogs automatically.
+
+    private static async Task<IResult> DeleteUserAsync(
+        [FromBody] DeleteUserRequest request, AppDbContext db, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return Results.BadRequest(new { error = "email is required." });
+
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (user is null)
+            return Results.NotFound(new { error = $"No account found for '{email}'." });
+
+        db.Users.Remove(user);
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(new { message = $"{user.Email} permanently deleted." });
+    }
 }
 
+public record CreateUserRequest(string Email, string Password);
+public record DeleteUserRequest(string Email);
 public record GrantLicenseRequest(string Email, string Extension, int Months);
 public record RevokeLicenseRequest(string Email, string Extension);
 public record SetLimitsRequest(int? RequestLimit, int? TokenLimit, string? Notes);
