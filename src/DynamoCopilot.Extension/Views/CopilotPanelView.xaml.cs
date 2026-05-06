@@ -25,29 +25,6 @@ namespace DynamoCopilot.Extension.Views
             _viewModel.SettingsVm.PropertyChanged += OnSettingsVmPropertyChanged;
         }
 
-        // ── Auth ──────────────────────────────────────────────────────────────
-
-        private async void OnLoginClick(object sender, RoutedEventArgs e)
-            => await _viewModel.LoginAsync(LoginPasswordBox.Password);
-
-        private async void OnRegisterClick(object sender, RoutedEventArgs e)
-            => await _viewModel.RegisterAsync(
-                   RegisterPasswordBox.Password,
-                   RegisterConfirmPasswordBox.Password);
-
-        private void OnSwitchToRegister(object sender, MouseButtonEventArgs e)
-        {
-            _viewModel.IsRegisterMode = true;
-            LoginPasswordBox.Clear();
-        }
-
-        private void OnSwitchToLogin(object sender, MouseButtonEventArgs e)
-        {
-            _viewModel.IsRegisterMode = false;
-            RegisterPasswordBox.Clear();
-            RegisterConfirmPasswordBox.Clear();
-        }
-
         // ── Settings (separate AI settings + user info panels) ──────────────────
 
         private void OnAiSettingsClick(object sender, RoutedEventArgs e)
@@ -74,12 +51,7 @@ namespace DynamoCopilot.Extension.Views
         }
 
         private void OnSignOutClick(object sender, RoutedEventArgs e)
-        {
-            _viewModel.Logout();
-            LoginPasswordBox.Clear();
-            RegisterPasswordBox.Clear();
-            RegisterConfirmPasswordBox.Clear();
-        }
+            => _viewModel.Logout();
 
         // ── Chat ──────────────────────────────────────────────────────────────
 

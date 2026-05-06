@@ -58,6 +58,7 @@ DynamoCopilot.Extension/
 ├── ViewModels/
 │   ├── CopilotPanelViewModel.cs           Chat + auth + AI settings + user info
 │   ├── SuggestNodesPanelViewModel.cs      Node search + auth + user info
+│   ├── AuthFormViewModel.cs               Shared login/register form state (used by both panels)
 │   ├── SettingsPanelViewModel.cs          AI provider config (Copilot only)
 │   ├── NodeSuggestionCardViewModel.cs     Per-card state for node results
 │   ├── SpecCardViewModel.cs               Spec-first feature card
@@ -65,7 +66,8 @@ DynamoCopilot.Extension/
 │
 ├── Views/
 │   ├── CopilotPanelView.xaml              Chat UI (no node suggest tab)
-│   └── SuggestNodesPanelView.xaml         Search input + cards + user icon
+│   ├── SuggestNodesPanelView.xaml         Search input + cards + user icon
+│   └── AuthFormView.xaml                  Shared login/register UserControl (inline in both panels)
 │
 └── Services/
     ├── CopilotLogger.cs
@@ -102,8 +104,11 @@ public static event Action?         GlobalLoggedOut;  // fired after tokens dele
 ```
 
 **Login sync flow:**
-1. User logs in via either panel → `AuthService` saves tokens, fires `GlobalLoggedIn`
-2. The *other* VM's `OnGlobalLoggedIn` handler calls `OnAuthSuccess()` if it isn't already logged in
+1. User submits credentials in `AuthFormView` → `AuthFormViewModel.LoginAsync` calls `_authService.LoginAsync`
+2. That `AuthService` instance saves tokens to disk and fires `GlobalLoggedIn`
+3. The *other* VM's `OnGlobalLoggedIn` handler calls `_authService.TryLoadTokens()` first (to load the tokens written by the other instance into its own in-memory state), then calls `OnAuthSuccess()`
+
+**Critical**: the `TryLoadTokens()` call in step 3 is mandatory. Without it, the receiving VM's `AuthService` instance has `_tokens == null`, so `GetGrantedExtensions()` returns empty → "No License" shown, and `RefreshUserInfoAsync()` has no access token to make the `/api/me` call.
 
 **Logout sync flow:**
 1. User clicks Sign Out in VM-A → VM-A calls `ClearAuthState()` first (sets `IsLoggedIn = false`)
@@ -112,6 +117,24 @@ public static event Action?         GlobalLoggedOut;  // fired after tokens dele
 4. VM-B's handler guard passes → calls `DispatchToUi(ClearAuthState)` → VM-B's UI clears
 
 Both VMs subscribe in their constructor and **unsubscribe in `Shutdown()`** to prevent memory leaks.
+
+### Shared auth form (`AuthFormView`)
+
+The login/register form is a single shared WPF `UserControl` (`AuthFormView.xaml`) used by both panels. It is **not** a popup window — it renders inline inside the panel.
+
+- **`AuthFormViewModel`** — owns all form state (`LoginEmail`, `RegisterEmail`, `IsRegisterMode`, `IsAuthBusy`, `AuthError`). No event-based coupling to the panel VM; when login succeeds `GlobalLoggedIn` fires and the panel VM's `OnGlobalLoggedIn` hides the form via `IsLoggedIn`.
+- Each panel VM creates its own `AuthFormViewModel` instance: `public AuthFormViewModel AuthForm { get; }`, initialized in the constructor with `_authService`.
+- The panel XAML wraps it in a `Grid` that collapses when `IsLoggedIn = true`:
+
+```xaml
+<Grid Visibility="{Binding IsLoggedIn, Converter={StaticResource InvBoolToVis}}">
+    <views:AuthFormView DataContext="{Binding AuthForm}"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"/>
+</Grid>
+```
+
+**Do not** make `AuthFormView` a popup `Window` — Dynamo's WPF host does not reliably support secondary windows created from extension code, and `Application.Current.MainWindow` ownership is unreliable in that context.
 
 ---
 

@@ -64,6 +64,7 @@ obj/Debug/net48/
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
  Views/
+  AuthFormView.g.cs
   CopilotPanelView.g.cs
   SuggestNodesPanelView.g.cs
 Services/
@@ -73,12 +74,14 @@ Services/
  PackageStateService.cs
 SuggestNodesViewExtension.cs
 ViewModels/
+ AuthFormViewModel.cs
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
  SuggestNodesPanelViewModel.cs
 Views/
+ AuthFormView.xaml.cs
  CopilotPanelView.xaml.cs
  SuggestNodesPanelView.xaml.cs
 
@@ -223,6 +226,7 @@ obj/Debug/net8.0-windows/
  DynamoCopilot.Extension.AssemblyInfo.cs
  GeneratedInternalTypeHelper.g.cs
  Views/
+  AuthFormView.g.cs
   CopilotPanelView.g.cs
   SuggestNodesPanelView.g.cs
 Services/
@@ -232,12 +236,14 @@ Services/
  PackageStateService.cs
 SuggestNodesViewExtension.cs
 ViewModels/
+ AuthFormViewModel.cs
  CopilotPanelViewModel.cs
  NodeSuggestionCardViewModel.cs
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
  SuggestNodesPanelViewModel.cs
 Views/
+ AuthFormView.xaml.cs
  CopilotPanelView.xaml.cs
  SuggestNodesPanelView.xaml.cs
 

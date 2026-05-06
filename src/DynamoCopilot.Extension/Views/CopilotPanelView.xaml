@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:DynamoCopilot.Extension.ViewModels"
     xmlns:conv="clr-namespace:DynamoCopilot.Extension.Converters"
+    xmlns:views="clr-namespace:DynamoCopilot.Extension.Views"
     Background="#1E1E1E"
     Foreground="#D4D4D4"
     FontFamily="Segoe UI"
@@ -761,150 +762,12 @@
     <Grid>
 
         <!-- ══════════════════════════════════════════════════════════════ -->
-        <!--  LOGIN / REGISTER PANEL                                        -->
-        <!--  Visible when IsLoggedIn = false                               -->
+        <!--  NOT LOGGED IN — auth form                                      -->
         <!-- ══════════════════════════════════════════════════════════════ -->
         <Grid Visibility="{Binding IsLoggedIn, Converter={StaticResource InvBoolToVis}}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled">
-                <StackPanel Margin="28,32,28,24" VerticalAlignment="Center">
-
-                    <!-- Logo + title -->
-                    <Path Data="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"
-                          Fill="#6EC6F5" Width="36" Height="36" Stretch="Uniform"
-                          HorizontalAlignment="Center" Margin="0,0,0,10" Opacity="0.9"/>
-                    <TextBlock Text="Dynamo Co-pilot"
-                               FontSize="18" FontWeight="Bold"
-                               Foreground="{StaticResource TextBrush}"
-                               HorizontalAlignment="Center" Margin="0,0,0,4"/>
-                    <TextBlock FontSize="12" Foreground="{StaticResource MutedBrush}"
-                               HorizontalAlignment="Center" Margin="0,0,0,28">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="Sign in to continue"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsRegisterMode}" Value="True">
-                                        <Setter Property="Text" Value="Create your account"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-
-                    <!-- ── LOGIN FORM ── -->
-                    <StackPanel Visibility="{Binding IsLoginMode, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Email" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                        <TextBox x:Name="LoginEmailBox"
-                                 Style="{StaticResource DarkInput}"
-                                 Text="{Binding LoginEmail, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,0,0,12"/>
-
-                        <TextBlock Text="Password" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                        <PasswordBox x:Name="LoginPasswordBox"
-                                     Style="{StaticResource DarkPasswordBox}"
-                                     Margin="0,0,0,20"/>
-
-                        <Button x:Name="LoginBtn"
-                                Content="Sign In"
-                                Style="{StaticResource PrimaryBtn}"
-                                Padding="0,10"
-                                FontSize="13"
-                                IsEnabled="{Binding IsAuthIdle}"
-                                Click="OnLoginClick"
-                                Margin="0,0,0,16"/>
-
-                        <!-- Busy indicator -->
-                        <TextBlock Text="Signing in…"
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}"
-                                   HorizontalAlignment="Center" Margin="0,0,0,8"
-                                   Visibility="{Binding IsAuthBusy, Converter={StaticResource BoolToVis}}"/>
-
-                        <!-- Toggle to Register -->
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <TextBlock Text="Don't have an account? "
-                                       FontSize="12" Foreground="{StaticResource MutedBrush}"/>
-                            <TextBlock FontSize="12" Foreground="{StaticResource AccentBrush}"
-                                       Cursor="Hand" x:Name="SwitchToRegisterLink"
-                                       MouseLeftButtonUp="OnSwitchToRegister">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Create account"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="TextDecorations" Value="Underline"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
-                    </StackPanel>
-
-                    <!-- ── REGISTER FORM ── -->
-                    <StackPanel Visibility="{Binding IsRegisterMode, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Email" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                        <TextBox x:Name="RegisterEmailBox"
-                                 Style="{StaticResource DarkInput}"
-                                 Text="{Binding RegisterEmail, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,0,0,12"/>
-
-                        <TextBlock Text="Password" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                        <PasswordBox x:Name="RegisterPasswordBox"
-                                     Style="{StaticResource DarkPasswordBox}"
-                                     Margin="0,0,0,12"/>
-
-                        <TextBlock Text="Confirm Password" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,4"/>
-                        <PasswordBox x:Name="RegisterConfirmPasswordBox"
-                                     Style="{StaticResource DarkPasswordBox}"
-                                     Margin="0,0,0,20"/>
-
-                        <Button x:Name="RegisterBtn"
-                                Content="Create Account"
-                                Style="{StaticResource PrimaryBtn}"
-                                Padding="0,10"
-                                FontSize="13"
-                                IsEnabled="{Binding IsAuthIdle}"
-                                Click="OnRegisterClick"
-                                Margin="0,0,0,16"/>
-
-                        <!-- Busy indicator -->
-                        <TextBlock Text="Creating account…"
-                                   FontSize="12" Foreground="{StaticResource MutedBrush}"
-                                   HorizontalAlignment="Center" Margin="0,0,0,8"
-                                   Visibility="{Binding IsAuthBusy, Converter={StaticResource BoolToVis}}"/>
-
-                        <!-- Toggle to Login -->
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <TextBlock Text="Already have an account? "
-                                       FontSize="12" Foreground="{StaticResource MutedBrush}"/>
-                            <TextBlock FontSize="12" Foreground="{StaticResource AccentBrush}"
-                                       Cursor="Hand" x:Name="SwitchToLoginLink"
-                                       MouseLeftButtonUp="OnSwitchToLogin">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Sign in"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="TextDecorations" Value="Underline"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
-                    </StackPanel>
-
-                    <!-- ── Error message (shared) ── -->
-                    <Border Background="#3D1515" BorderBrush="#F48771" BorderThickness="1"
-                            CornerRadius="5" Padding="10,8" Margin="0,16,0,0"
-                            Visibility="{Binding HasAuthError, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="{Binding AuthError}"
-                                   Foreground="{StaticResource ErrorBrush}"
-                                   FontSize="12" TextWrapping="Wrap"/>
-                    </Border>
-
-                </StackPanel>
-            </ScrollViewer>
+            <views:AuthFormView DataContext="{Binding AuthForm}"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Center"/>
         </Grid>
 
         <!-- ══════════════════════════════════════════════════════════════ -->

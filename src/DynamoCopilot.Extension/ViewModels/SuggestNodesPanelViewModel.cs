@@ -20,14 +20,11 @@ namespace DynamoCopilot.Extension.ViewModels
         private readonly PackageStateService     _packageState;
         private readonly DynamoPackageDownloader _downloader;
 
+        public AuthFormViewModel AuthForm { get; }
+
         // ── Auth state ────────────────────────────────────────────────────────
 
-        private bool   _isLoggedIn;
-        private bool   _isRegisterMode;
-        private bool   _isAuthBusy;
-        private string _authError     = string.Empty;
-        private string _loginEmail    = string.Empty;
-        private string _registerEmail = string.Empty;
+        private bool _isLoggedIn;
 
         // ── User info ─────────────────────────────────────────────────────────
 
@@ -86,42 +83,6 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             get => _isLoggedIn;
             private set { _isLoggedIn = value; OnPropertyChanged(); }
-        }
-
-        public bool IsRegisterMode
-        {
-            get => _isRegisterMode;
-            set { _isRegisterMode = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsLoginMode)); AuthError = string.Empty; }
-        }
-
-        public bool IsLoginMode => !_isRegisterMode;
-
-        public bool IsAuthBusy
-        {
-            get => _isAuthBusy;
-            private set { _isAuthBusy = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsAuthIdle)); }
-        }
-
-        public bool IsAuthIdle => !_isAuthBusy;
-
-        public string AuthError
-        {
-            get => _authError;
-            private set { _authError = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasAuthError)); }
-        }
-
-        public bool HasAuthError => !string.IsNullOrWhiteSpace(_authError);
-
-        public string LoginEmail
-        {
-            get => _loginEmail;
-            set { _loginEmail = value; OnPropertyChanged(); }
-        }
-
-        public string RegisterEmail
-        {
-            get => _registerEmail;
-            set { _registerEmail = value; OnPropertyChanged(); }
         }
 
         // ── User info bindings ────────────────────────────────────────────────
@@ -226,6 +187,8 @@ namespace DynamoCopilot.Extension.ViewModels
             _packageState       = packageState       ?? throw new ArgumentNullException(nameof(packageState));
             _downloader         = downloader         ?? throw new ArgumentNullException(nameof(downloader));
 
+            AuthForm = new AuthFormViewModel(_authService);
+
             AuthService.GlobalLoggedIn  += OnGlobalLoggedIn;
             AuthService.GlobalLoggedOut += OnGlobalLoggedOut;
         }
@@ -237,10 +200,7 @@ namespace DynamoCopilot.Extension.ViewModels
             if (!_authService.TryLoadTokens())
                 return;
 
-            IsAuthBusy = true;
-            var token  = await _authService.GetValidTokenAsync();
-            IsAuthBusy = false;
-
+            var token = await _authService.GetValidTokenAsync();
             if (string.IsNullOrEmpty(token))
                 return;
 
@@ -248,38 +208,6 @@ namespace DynamoCopilot.Extension.ViewModels
         }
 
         // ── Auth actions ──────────────────────────────────────────────────────
-
-        public async Task LoginAsync(string password)
-        {
-            if (IsAuthBusy) return;
-            if (string.IsNullOrWhiteSpace(LoginEmail))  { AuthError = "Please enter your email.";    return; }
-            if (string.IsNullOrWhiteSpace(password))    { AuthError = "Please enter your password."; return; }
-
-            IsAuthBusy = true;
-            AuthError  = string.Empty;
-            var result = await _authService.LoginAsync(LoginEmail.Trim(), password);
-            IsAuthBusy = false;
-
-            if (!result.Success) { AuthError = result.ErrorMessage ?? "Login failed."; return; }
-            OnAuthSuccess();
-        }
-
-        public async Task RegisterAsync(string password, string confirmPassword)
-        {
-            if (IsAuthBusy) return;
-            if (string.IsNullOrWhiteSpace(RegisterEmail)) { AuthError = "Please enter your email.";                          return; }
-            if (string.IsNullOrWhiteSpace(password))      { AuthError = "Please enter a password.";                          return; }
-            if (password.Length < 8)                      { AuthError = "Password must be at least 8 characters.";           return; }
-            if (password != confirmPassword)              { AuthError = "Passwords do not match.";                           return; }
-
-            IsAuthBusy = true;
-            AuthError  = string.Empty;
-            var result = await _authService.RegisterAsync(RegisterEmail.Trim(), password);
-            IsAuthBusy = false;
-
-            if (!result.Success) { AuthError = result.ErrorMessage ?? "Registration failed."; return; }
-            OnAuthSuccess();
-        }
 
         public void Logout()
         {
@@ -295,14 +223,10 @@ namespace DynamoCopilot.Extension.ViewModels
             OnlineNodeSuggestions.Clear();
             OnPropertyChanged(nameof(HasInstalledNodes));
             OnPropertyChanged(nameof(HasOnlineNodes));
-            ShowUserPanel  = false;
-            IsLoggedIn     = false;
-            IsRegisterMode = false;
-            AuthError      = string.Empty;
-            LoginEmail     = string.Empty;
-            RegisterEmail  = string.Empty;
-            NodeQuery      = string.Empty;
-            StatusMessage  = string.Empty;
+            ShowUserPanel = false;
+            IsLoggedIn    = false;
+            NodeQuery     = string.Empty;
+            StatusMessage = string.Empty;
         }
 
         private void OnGlobalLoggedOut()
@@ -314,6 +238,7 @@ namespace DynamoCopilot.Extension.ViewModels
         private void OnGlobalLoggedIn(string _)
         {
             if (IsLoggedIn) return;  // we initiated this login — already set
+            _authService.TryLoadTokens(); // sync tokens written by the other extension's AuthService into memory
             DispatchToUi(OnAuthSuccess);
         }
 
