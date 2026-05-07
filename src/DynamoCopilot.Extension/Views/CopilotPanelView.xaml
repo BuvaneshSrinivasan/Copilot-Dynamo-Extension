@@ -12,7 +12,6 @@
     MinWidth="280">
 
     <UserControl.Resources>
-
         <!-- ── Colours ──────────────────────────────────────────────────── -->
         <SolidColorBrush x:Key="BgBrush"       Color="#1E1E1E"/>
         <SolidColorBrush x:Key="BgInputBrush"  Color="#2D2D2D"/>
