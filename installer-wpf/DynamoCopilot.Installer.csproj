@@ -22,4 +22,10 @@
     <ProjectReference Include="..\src\DynamoCopilot.Core\DynamoCopilot.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Bootstrapper\**" />
+    <EmbeddedResource Remove="Bootstrapper\**" />
+    <None Remove="Bootstrapper\**" />
+  </ItemGroup>
+
 </Project>

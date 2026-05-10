@@ -1,19 +1,23 @@
 <#
 .SYNOPSIS
-    Builds DynamoCopilot-Setup.exe (custom WPF installer).
+    Builds DynamoCopilot-Setup.exe (bootstrapper + WPF installer).
 
 .DESCRIPTION
     1. Publishes both TFMs (net48 and net8.0-windows) to a staging dist\ folder.
-    2. Builds the WPF installer project (installer-wpf\).
-    3. Copies dist\ into the installer output folder.
-    4. Final deliverable: installer-wpf\Output\DynamoCopilot-Setup.exe
-                          installer-wpf\Output\dist\
+    2. Builds the WPF installer (net8.0-windows) — the "inner" installer.
+    3. Appends the DLL payload zip to the inner installer exe.
+    4. Embeds the inner installer into the net48 Bootstrapper project.
+    5. Builds the Bootstrapper → final DynamoCopilot-Setup.exe.
+
+    The bootstrapper (net48) always runs on Windows 10/11. It checks for the
+    .NET 8 Desktop Runtime, downloads and installs it if missing, then extracts
+    and launches the inner WPF installer.
 
     Requires:
       - .NET 8 SDK
 
 .PARAMETER Version
-    Version string baked into the installer assembly (default: "1.0.0").
+    Version string baked into both installer assemblies (default: "1.0.0").
 
 .USAGE
     .\build-installer.ps1
@@ -27,15 +31,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$RepoRoot      = $PSScriptRoot
-$ExtProj       = Join-Path $RepoRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
-$InstallerProj = Join-Path $RepoRoot "installer-wpf\DynamoCopilot.Installer.csproj"
-$StagingDist   = Join-Path $RepoRoot "installer-wpf\staging-dist"
-$OutputDir     = Join-Path $RepoRoot "installer-wpf\Output"
+$RepoRoot             = $PSScriptRoot
+$ExtProj              = Join-Path $RepoRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
+$InstallerProj        = Join-Path $RepoRoot "installer-wpf\DynamoCopilot.Installer.csproj"
+$BootstrapperProj     = Join-Path $RepoRoot "installer-wpf\Bootstrapper\Bootstrapper.csproj"
+$StagingDist          = Join-Path $RepoRoot "installer-wpf\staging-dist"
+$OutputDir            = Join-Path $RepoRoot "installer-wpf\Output"          # WPF installer + final exe
+$BootstrapperOut      = Join-Path $RepoRoot "installer-wpf\BootstrapperOut" # temp: bootstrapper publish
 
 # ── Clean staging ─────────────────────────────────────────────────────────────
 
-foreach ($Dir in @($StagingDist, $OutputDir)) {
+foreach ($Dir in @($StagingDist, $OutputDir, $BootstrapperOut)) {
     if (Test-Path $Dir) {
         Remove-Item $Dir -Recurse -Force
         Write-Host "Cleaned: $Dir" -ForegroundColor DarkGray
@@ -84,62 +90,98 @@ foreach ($Tfm in @("net48", "net8.0-windows")) {
     }
 }
 
-# ── Build WPF installer ───────────────────────────────────────────────────────
+# ── Build WPF installer (inner, net8.0-windows) ──────────────────────────────
 
-Write-Host "`n==> Building WPF installer (v$Version) ..." -ForegroundColor Cyan
+Write-Host "`n==> Building WPF installer - inner (v$Version) ..." -ForegroundColor Cyan
 
 & dotnet publish $InstallerProj `
     --configuration Release `
     --framework     net8.0-windows `
+    --runtime       win-x64 `
     --output        $OutputDir `
     --no-self-contained `
+    -p:PublishSingleFile=true `
     -p:Version=$Version `
     -p:AssemblyVersion=$Version
 
 if ($LASTEXITCODE -ne 0) { throw "WPF installer build failed" }
 
-Write-Host "    Published installer to: $OutputDir" -ForegroundColor Green
+Write-Host "    Published inner installer to: $OutputDir" -ForegroundColor Green
 
-# ── Copy dist into the installer output folder ────────────────────────────────
+# ── Copy dist into the output folder ─────────────────────────────────────────
 
 Write-Host "`n==> Copying dist into output ..." -ForegroundColor Cyan
 
 $OutputDist = Join-Path $OutputDir "dist"
 Copy-Item $StagingDist $OutputDist -Recurse -Force
 
-# Clean staging (no longer needed)
 Remove-Item $StagingDist -Recurse -Force
 
 Write-Host "    dist\ ready at: $OutputDist" -ForegroundColor Green
 
-# ── Embed DLL payload into the exe ───────────────────────────────────────────
+# ── Append DLL payload zip to the inner installer exe ────────────────────────
+# create_payload.ps1 expects $ProjectDir\Output\dist — pass installer-wpf\ as before.
 
-Write-Host "`n==> Embedding payload into installer ..." -ForegroundColor Cyan
+Write-Host "`n==> Embedding payload into inner installer ..." -ForegroundColor Cyan
 
 $InstallerDir  = Join-Path $RepoRoot "installer-wpf"
 $PayloadScript = Join-Path $InstallerDir "build\create_payload.ps1"
 $AppendScript  = Join-Path $InstallerDir "build\append_payload.ps1"
 $PayloadZip    = Join-Path $InstallerDir "payload.zip"
-$ExePath       = Join-Path $OutputDir "DynamoCopilot-Setup.exe"
+$InnerExePath  = Join-Path $OutputDir "DynamoCopilot-Setup.exe"
 
-if (-not (Test-Path $ExePath))    { throw "Installer exe not found: $ExePath" }
-if (-not (Test-Path $PayloadScript)) { throw "create_payload.ps1 not found: $PayloadScript" }
-if (-not (Test-Path $AppendScript))  { throw "append_payload.ps1 not found: $AppendScript" }
+if (-not (Test-Path $InnerExePath))   { throw "Inner installer exe not found: $InnerExePath" }
+if (-not (Test-Path $PayloadScript))  { throw "create_payload.ps1 not found: $PayloadScript" }
+if (-not (Test-Path $AppendScript))   { throw "append_payload.ps1 not found: $AppendScript" }
 
 & $PayloadScript -ProjectDir $InstallerDir
 if ($LASTEXITCODE -ne 0) { throw "create_payload.ps1 failed" }
 
-& $AppendScript -ExePath $ExePath -ZipPath $PayloadZip
+& $AppendScript -ExePath $InnerExePath -ZipPath $PayloadZip
 if ($LASTEXITCODE -ne 0) { throw "append_payload.ps1 failed" }
 
 if (Test-Path $PayloadZip) { Remove-Item $PayloadZip -Force }
 
+Write-Host "    Inner installer with payload ready: $InnerExePath" -ForegroundColor Green
+
+# ── Wrap in net48 Bootstrapper ────────────────────────────────────────────────
+# The bootstrapper is a net48 WinForms exe — always runs on Windows 10/11 without
+# any pre-installed runtime. It checks for .NET 8, downloads it if missing,
+# then extracts and launches the inner WPF installer (embedded as a resource).
+
+Write-Host "`n==> Building net48 Bootstrapper (embeds inner installer) ..." -ForegroundColor Cyan
+
+$BootstrapperDir   = Join-Path $RepoRoot "installer-wpf\Bootstrapper"
+$BootstrapperInner = Join-Path $BootstrapperDir "inner-installer.exe"
+
+Copy-Item $InnerExePath $BootstrapperInner -Force
+Write-Host "    Copied inner installer → Bootstrapper\inner-installer.exe" -ForegroundColor DarkGray
+
+& dotnet publish $BootstrapperProj `
+    --configuration Release `
+    --framework     net48 `
+    --output        $BootstrapperOut `
+    -p:Version=$Version `
+    -p:AssemblyVersion=$Version
+
+if ($LASTEXITCODE -ne 0) { throw "Bootstrapper build failed" }
+
+# Remove the embedded resource from the source tree (it's a build artifact).
+Remove-Item $BootstrapperInner -Force
+
+# Replace the inner exe in Output\ with the final bootstrapper exe.
+Copy-Item (Join-Path $BootstrapperOut "DynamoCopilot-Setup.exe") $InnerExePath -Force
+Remove-Item $BootstrapperOut -Recurse -Force
+
+Write-Host "    Bootstrapper wrapped successfully." -ForegroundColor Green
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
-$SizeMb = [math]::Round((Get-Item $ExePath).Length / 1MB, 1)
+$FinalExe = Join-Path $OutputDir "DynamoCopilot-Setup.exe"
+$SizeMb   = [math]::Round((Get-Item $FinalExe).Length / 1MB, 1)
 
 Write-Host ""
 Write-Host "==> Done! Installer ready ($SizeMb MB)" -ForegroundColor Green
-Write-Host "    Exe: $ExePath"                      -ForegroundColor Green
-Write-Host "    DLLs and runtimes are embedded in the exe." -ForegroundColor DarkGray
-Write-Host "    nodes.db, model.onnx, vocab.txt are downloaded at install time." -ForegroundColor DarkGray
+Write-Host "    Exe: $FinalExe"                      -ForegroundColor Green
+Write-Host "    Bootstrapper auto-installs .NET 8 Desktop Runtime if missing." -ForegroundColor DarkGray
+Write-Host "    DLLs and runtimes are embedded; nodes.db downloaded at install time." -ForegroundColor DarkGray

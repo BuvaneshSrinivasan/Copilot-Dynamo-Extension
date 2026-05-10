@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>DynamoCopilot.Bootstrapper</RootNamespace>
+    <AssemblyName>DynamoCopilot-Setup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <LangVersion>10</LangVersion>
+    <Nullable>enable</Nullable>
+    <Company>BimEra</Company>
+    <Product>DynamoCopilot</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <!--
+    inner-installer.exe is the WPF installer (net8.0-windows) built and payload-appended
+    by build-installer.ps1 before this project is compiled. It does not exist in source control.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="inner-installer.exe" Condition="Exists('inner-installer.exe')">
+      <LogicalName>inner-installer.exe</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

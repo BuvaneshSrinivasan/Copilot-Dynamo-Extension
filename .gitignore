@@ -7,6 +7,9 @@ obj/
 installer-wpf/payload.zip
 installer-wpf/dist.zip
 installer-wpf/Output/
+installer-wpf/BootstrapperOut/
+installer-wpf/inner-output/
+installer-wpf/Bootstrapper/inner-installer.exe
 *.user
 *.suo
 .vs/
