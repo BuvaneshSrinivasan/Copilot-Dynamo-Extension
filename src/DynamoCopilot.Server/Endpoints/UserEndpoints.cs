@@ -1,14 +1,17 @@
 using System.Security.Claims;
 using DynamoCopilot.Server.Data;
+using DynamoCopilot.Server.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace DynamoCopilot.Server.Endpoints;
 
 // =============================================================================
-// UserEndpoints — /api/me
+// UserEndpoints — /api/me, /api/usage/report
 // =============================================================================
-// Returns the authenticated user's profile and current usage stats.
-// Used by the Dynamo extension to populate the user info panel.
+// /api/me            — returns the authenticated user's profile and usage stats
+// /api/usage/report  — extension reports token/request counts after each direct
+//                      AI call (Gemini, OpenAI, Claude, etc. called client-side)
 // =============================================================================
 
 public static class UserEndpoints
@@ -16,7 +19,10 @@ public static class UserEndpoints
     public static void MapUserEndpoints(this WebApplication app)
     {
         app.MapGet("/api/me", GetMeAsync).RequireAuthorization();
+        app.MapPost("/api/usage/report", ReportUsageAsync).RequireAuthorization();
     }
+
+    public sealed record UsageReportRequest(int Tokens, int Requests);
 
     private static async Task<IResult> GetMeAsync(
         HttpContext httpContext,
@@ -50,5 +56,44 @@ public static class UserEndpoints
                 Expired = l.EndDate.HasValue && l.EndDate.Value < now
             })
         });
+    }
+
+    private static async Task<IResult> ReportUsageAsync(
+        [FromBody] UsageReportRequest request,
+        HttpContext httpContext,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var userIdStr = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Results.Unauthorized();
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null) return Results.Unauthorized();
+        if (!user.IsActive) return Results.Forbid();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (user.LastResetDate != today)
+        {
+            if (user.LastResetDate.HasValue && (user.DailyRequestCount > 0 || user.DailyTokenCount > 0))
+            {
+                db.UsageLogs.Add(new UsageLog
+                {
+                    UserId       = user.Id,
+                    Date         = user.LastResetDate.Value,
+                    RequestCount = user.DailyRequestCount,
+                    TokenCount   = user.DailyTokenCount
+                });
+            }
+            user.DailyRequestCount = 0;
+            user.DailyTokenCount   = 0;
+            user.LastResetDate     = today;
+        }
+
+        user.DailyRequestCount += Math.Max(0, request.Requests);
+        user.DailyTokenCount   += Math.Max(0, request.Tokens);
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok();
     }
 }

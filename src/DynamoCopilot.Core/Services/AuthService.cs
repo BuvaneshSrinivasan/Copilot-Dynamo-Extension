@@ -355,6 +355,33 @@ namespace DynamoCopilot.Core.Services
             }
         }
 
+        // ── Usage reporting ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Fire-and-forget: reports token and request counts to the server after
+        /// each direct AI provider call (Gemini/OpenAI/Claude/Ollama called by the
+        /// extension itself). Silently ignores failures — non-critical telemetry.
+        /// </summary>
+        public async Task ReportUsageAsync(int tokens, int requests)
+        {
+            var token = await GetValidTokenAsync();
+            if (string.IsNullOrEmpty(token)) return;
+
+            try
+            {
+                var body = JsonSerializer.Serialize(new Dictionary<string, int>
+                {
+                    ["tokens"]   = tokens,
+                    ["requests"] = requests
+                });
+                using var request = new HttpRequestMessage(HttpMethod.Post, _serverUrl + "/api/usage/report");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                await _httpClient.SendAsync(request);
+            }
+            catch { }
+        }
+
         // ── Logout ───────────────────────────────────────────────────────────────
 
         public void Logout()

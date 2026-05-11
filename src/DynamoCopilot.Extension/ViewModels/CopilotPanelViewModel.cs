@@ -671,7 +671,14 @@ namespace DynamoCopilot.Extension.ViewModels
             IsStreaming = false;
 
             // Estimate tokens for this exchange (~4 chars per token)
-            TokensUsed += Math.Max(1, (userText.Length + contentBuilder.Length) / 4);
+            int estimatedTokens = Math.Max(1, (userText.Length + contentBuilder.Length) / 4);
+            TokensUsed += estimatedTokens;
+
+            // Report to server — skip when using ServerLlmService because the
+            // server's RateLimitMiddleware already tracks those requests server-side.
+            if (!(_llmService is ServerLlmService))
+                _ = _authService.ReportUsageAsync(estimatedTokens, 1);
+
             CopilotLogger.Log("Streaming", "UI updated — done");
 
             _currentSession.Messages.Add(new ChatMessage
