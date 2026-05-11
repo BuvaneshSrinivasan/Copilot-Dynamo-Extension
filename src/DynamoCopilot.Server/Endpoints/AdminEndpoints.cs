@@ -106,7 +106,8 @@ public static class AdminEndpoints
     // (start date preserved, end date extended from today or the current end date).
     //
     // Request body:
-    //   { "email": "user@example.com", "extension": "Copilot", "months": 12 }
+    //   { "email": "user@example.com", "extension": "Copilot", "amount": 12, "unit": "months" }
+    //   unit: "days" | "weeks" | "months" (default: "months")
 
     private static async Task<IResult> GrantLicenseAsync(
         GrantLicenseRequest request,
@@ -116,8 +117,12 @@ public static class AdminEndpoints
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Extension))
             return Results.BadRequest(new { error = "email and extension are required." });
 
-        if (request.Months <= 0)
-            return Results.BadRequest(new { error = "months must be a positive integer." });
+        if (request.Amount <= 0)
+            return Results.BadRequest(new { error = "amount must be a positive integer." });
+
+        var unit = (request.Unit ?? "months").ToLowerInvariant();
+        if (unit is not ("days" or "weeks" or "months"))
+            return Results.BadRequest(new { error = "unit must be 'days', 'weeks', or 'months'." });
 
         var email = request.Email.Trim().ToLowerInvariant();
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
@@ -137,7 +142,7 @@ public static class AdminEndpoints
                 Extension = request.Extension,
                 IsActive = true,
                 StartDate = now,
-                EndDate = now.AddMonths(request.Months)
+                EndDate = AddDuration(now, request.Amount, unit)
             });
         }
         else
@@ -148,12 +153,12 @@ public static class AdminEndpoints
                 : now;
 
             existing.IsActive = true;
-            existing.EndDate = baseDate.AddMonths(request.Months);
+            existing.EndDate = AddDuration(baseDate, request.Amount, unit);
         }
 
         await db.SaveChangesAsync(ct);
 
-        var endDate = existing?.EndDate ?? now.AddMonths(request.Months);
+        var endDate = existing?.EndDate ?? AddDuration(now, request.Amount, unit);
         return Results.Ok(new
         {
             message = $"{request.Extension} licence granted to {email}.",
@@ -344,10 +349,17 @@ public static class AdminEndpoints
 
         return Results.Ok(new { message = $"{user.Email} permanently deleted." });
     }
+
+    private static DateTime AddDuration(DateTime date, int amount, string unit) => unit switch
+    {
+        "days"  => date.AddDays(amount),
+        "weeks" => date.AddDays(amount * 7),
+        _       => date.AddMonths(amount)
+    };
 }
 
 public record CreateUserRequest(string Email, string Password);
 public record DeleteUserRequest(string Email);
-public record GrantLicenseRequest(string Email, string Extension, int Months);
+public record GrantLicenseRequest(string Email, string Extension, int Amount, string? Unit = "months");
 public record RevokeLicenseRequest(string Email, string Extension);
 public record SetLimitsRequest(int? RequestLimit, int? TokenLimit, string? Notes);

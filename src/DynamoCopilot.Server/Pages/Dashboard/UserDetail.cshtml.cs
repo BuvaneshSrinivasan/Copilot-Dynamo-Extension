@@ -35,7 +35,8 @@ public class UserDetailModel : DashboardPageModel
     public string ChartJson { get; set; } = "[]";
 
     [BindProperty] public string GrantExtension    { get; set; } = string.Empty;
-    [BindProperty] public int    GrantMonths       { get; set; } = 12;
+    [BindProperty] public int    GrantAmount       { get; set; } = 12;
+    [BindProperty] public string GrantUnit         { get; set; } = "months";
     [BindProperty] public string RevokeExtension   { get; set; } = string.Empty;
     [BindProperty] public int?   CustomRequestLimit { get; set; }
     [BindProperty] public string? Notes            { get; set; }
@@ -81,9 +82,10 @@ public class UserDetailModel : DashboardPageModel
 
     public async Task<IActionResult> OnPostGrantAsync()
     {
-        if (string.IsNullOrWhiteSpace(GrantExtension) || GrantMonths <= 0)
+        var unit = (GrantUnit ?? "months").ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(GrantExtension) || GrantAmount <= 0 || unit is not ("days" or "weeks" or "months"))
         {
-            TempData["Error"] = "Invalid extension or months value.";
+            TempData["Error"] = "Invalid extension or duration value.";
             return RedirectToPage(new { Id });
         }
 
@@ -102,7 +104,7 @@ public class UserDetailModel : DashboardPageModel
                 Extension = GrantExtension,
                 IsActive  = true,
                 StartDate = now,
-                EndDate   = now.AddMonths(GrantMonths)
+                EndDate   = AddDuration(now, GrantAmount, unit)
             });
         }
         else
@@ -110,13 +112,20 @@ public class UserDetailModel : DashboardPageModel
             var baseDate = existing.EndDate.HasValue && existing.EndDate.Value > now
                 ? existing.EndDate.Value : now;
             existing.IsActive = true;
-            existing.EndDate  = baseDate.AddMonths(GrantMonths);
+            existing.EndDate  = AddDuration(baseDate, GrantAmount, unit);
         }
 
         await _db.SaveChangesAsync();
-        TempData["Success"] = $"{GrantExtension} licence granted for {GrantMonths} month(s).";
+        TempData["Success"] = $"{GrantExtension} licence granted for {GrantAmount} {unit}.";
         return RedirectToPage(new { Id });
     }
+
+    private static DateTime AddDuration(DateTime date, int amount, string unit) => unit switch
+    {
+        "days"  => date.AddDays(amount),
+        "weeks" => date.AddDays(amount * 7),
+        _       => date.AddMonths(amount)
+    };
 
     public async Task<IActionResult> OnPostRevokeAsync()
     {
