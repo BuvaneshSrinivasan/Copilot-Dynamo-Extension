@@ -36,6 +36,7 @@ namespace DynamoCopilot.Extension.ViewModels
             SaveCommand        = new AsyncRelayCommand(SaveAsync, CanSave);
             TestCommand        = new AsyncRelayCommand(TestConnectionAsync, CanTest);
             ResetModelCommand  = new RelayCommand(ResetModel);
+            GetApiKeyCommand   = new RelayCommand(OpenApiKeyPage);
         }
 
         // ── Bindable providers list ───────────────────────────────────────────
@@ -80,6 +81,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 OnPropertyChanged(nameof(IsOllamaSelected));
                 OnPropertyChanged(nameof(NeedsApiKey));
                 OnPropertyChanged(nameof(ApiKeyLabel));
+                OnPropertyChanged(nameof(ApiKeyUrl));
                 OnPropertyChanged(nameof(ModelPlaceholder));
                 StatusMessage = string.Empty;
             }
@@ -141,6 +143,15 @@ namespace DynamoCopilot.Extension.ViewModels
             _                   => "API Key"
         };
 
+        public string ApiKeyUrl => _selectedProvider switch
+        {
+            AiProvider.OpenAI   => "https://platform.openai.com/api-keys",
+            AiProvider.Gemini   => "https://aistudio.google.com/apikey",
+            AiProvider.Claude   => "https://console.anthropic.com/settings/keys",
+            AiProvider.DeepSeek => "https://platform.deepseek.com/api_keys",
+            _                   => string.Empty
+        };
+
         public string ModelPlaceholder =>
             DynamoCopilotSettings.DefaultModelFor(_selectedProvider);
 
@@ -150,6 +161,7 @@ namespace DynamoCopilot.Extension.ViewModels
         public ICommand SaveCommand       { get; }
         public ICommand TestCommand       { get; }
         public ICommand ResetModelCommand { get; }
+        public ICommand GetApiKeyCommand  { get; }
 
         private bool CanSave()  => !_isBusy;
         private bool CanTest()  => !_isBusy;
@@ -263,6 +275,14 @@ namespace DynamoCopilot.Extension.ViewModels
         private void ResetModel()
         {
             ModelName = DynamoCopilotSettings.DefaultModelFor(_selectedProvider);
+        }
+
+        private void OpenApiKeyPage()
+        {
+            var url = ApiKeyUrl;
+            if (string.IsNullOrEmpty(url)) return;
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
 
         // ── Events ────────────────────────────────────────────────────────────
