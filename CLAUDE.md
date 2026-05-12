@@ -147,6 +147,22 @@ The login/register form is a single shared WPF `UserControl` (`AuthFormView.xaml
 
 **Node suggestion cards do NOT appear in the Copilot chat.** If the AI mentions a node name in prose, it stays as text — no interactive cards. All node card functionality is isolated to the Suggest Nodes extension.
 
+### Spec-first flow (Copilot only)
+
+When the user sends a message, `SendMessageCoreAsync` runs a classifier that decides whether this is a code-generation request. If it is, a `SpecCardViewModel` is shown inline in the chat (as a `ChatMessageType.SpecCard` message) instead of immediately calling the LLM.
+
+**Chat input locking:** `IsChatInputEnabled = IsApiKeyPresent && !IsSpecPending`. Both the TextBox and the Send button bind to this. The chat input is disabled while a spec card is waiting for a response, forcing the user to interact with the card. It re-enables on Confirm or Cancel. A tooltip *"Respond to the specification above first"* is shown on hover (`ToolTipService.ShowOnDisabled="True"`).
+
+**Custom instruction field:** Every spec card has an *"Additional instructions (optional)"* TextBox at the bottom (above the action buttons). `SpecCardViewModel.CustomInstruction` is a TwoWay-bound string. `CodeSpecification.CustomInstruction` is `[JsonIgnore]` — it is never part of the LLM-generated JSON, only set at runtime in `SpecCardViewModel.OnConfirm()` before the callback fires.
+
+**Cancel behaviour:** Cancelling removes the spec card from `Messages` (the "You" bubble stays) and re-enables the chat input. The removal is done via a closure in `ShowSpecCard` that captures the `ChatMessageViewModel` reference — do not change this to `CancelPendingSpec` directly or the card will remain visible in the chat.
+
+**Context sent to the LLM on Confirm:**
+1. The original user message is already in `_currentSession.Messages` as a user turn.
+2. If `CustomInstruction` is non-empty, it is shown as a new **"You" bubble** in the chat and added to `_currentSession.Messages` as a `ChatRole.User` message.
+3. A synthetic code-generation user message is built from the spec steps, inputs, output, clarifying-question answers, and (if present) an `**Additional instructions from user:**` line — then added to `_currentSession.Messages`.
+4. `RunStreamingAsync` sends the full session history (including all of the above) to the LLM.
+
 ### Per-extension licensing
 
 Licences are stored in the `UserLicenses` table (one row per user per extension). Each extension has a fixed string identifier defined in `ExtensionConstants` (Core project) and `AppConstants` (Server project) — both files must stay in sync.
