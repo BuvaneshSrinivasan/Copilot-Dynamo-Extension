@@ -27,6 +27,7 @@
 // The tool is safely re-runnable. Already-indexed nodes are skipped.
 // =============================================================================
 
+using DynamoCopilot.NodeIndexer;
 using DynamoCopilot.NodeIndexer.Database;
 using DynamoCopilot.NodeIndexer.Embeddings;
 using DynamoCopilot.NodeIndexer.Extractors;
@@ -37,22 +38,57 @@ using DynamoCopilot.NodeIndexer.Models;
 var packagesDir = GetArg(args, "--packages");
 var connString  = GetArg(args, "--connection");   // Mode 1
 var ollamaUrl   = GetArg(args, "--ollama-url") ?? "http://localhost:11434";
-var sqlitePath  = GetArg(args, "--sqlite");        // Mode 2
+var sqlitePath  = GetArg(args, "--sqlite");        // Mode 2 / Update
 var modelPath   = GetArg(args, "--model");
 var vocabPath2  = GetArg(args, "--vocab");
+bool updateMode = args.Contains("--update");
+bool fullRebuild = args.Contains("--full");
 
-bool mode2 = sqlitePath != null;
+bool mode2 = sqlitePath != null && !updateMode;
+
+// ── SETUP ─────────────────────────────────────────────────────────────────────
+
+using var cts = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+var ct = cts.Token;
+
+// ── UPDATE MODE: incremental download from Dynamo Package Manager ────────────
+
+if (updateMode)
+{
+    if (sqlitePath == null) { Console.Error.WriteLine("--update requires --sqlite <path to existing nodes.db>"); return 1; }
+    if (modelPath  == null) { Console.Error.WriteLine("--update requires --model");  return 1; }
+    if (vocabPath2 == null) { Console.Error.WriteLine("--update requires --vocab");  return 1; }
+    if (!File.Exists(sqlitePath)) { Console.Error.WriteLine($"nodes.db not found: {sqlitePath}"); return 1; }
+    if (!File.Exists(modelPath))  { Console.Error.WriteLine($"Model not found: {modelPath}");     return 1; }
+    if (!File.Exists(vocabPath2)) { Console.Error.WriteLine($"Vocab not found: {vocabPath2}");    return 1; }
+    return await RunUpdateAsync(sqlitePath, modelPath, vocabPath2, fullRebuild, ct);
+}
 
 if (packagesDir == null || (!mode2 && connString == null))
 {
     Console.Error.WriteLine("""
+        Usage — Update mode (incremental sync from Dynamo Package Manager):
+          dotnet run -- \
+            --update \
+            --sqlite  <path to existing nodes.db>        \
+            --model   <path to all-MiniLM-L6-v2.onnx>   \
+            --vocab   <path to vocab.txt>
+
+        Usage — Full rebuild (re-download all packages, clear and rebuild nodes.db):
+          dotnet run -- \
+            --update --full \
+            --sqlite  <path to nodes.db>                 \
+            --model   <path to all-MiniLM-L6-v2.onnx>   \
+            --vocab   <path to vocab.txt>
+
         Usage — Mode 1 (PostgreSQL + Ollama):
           dotnet run -- \
             --packages   <path to downloads folder>      \
             --connection "<PostgreSQL connection string>" \
             --ollama-url "http://localhost:11434"         (optional)
 
-        Usage — Mode 2 (SQLite + ONNX, for installer bundle):
+        Usage — Mode 2 (SQLite + ONNX, full rebuild for installer bundle):
           dotnet run -- \
             --packages  <path to downloads folder> \
             --sqlite    <output path for nodes.db>  \
@@ -74,11 +110,6 @@ if (!Directory.Exists(packagesDir))
     return 1;
 }
 
-// ── SETUP ─────────────────────────────────────────────────────────────────────
-
-using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
-var ct      = cts.Token;
 var logPath = Path.Combine(AppContext.BaseDirectory, "indexer-errors.log");
 
 // ── MODE DISPATCH ─────────────────────────────────────────────────────────────
@@ -364,5 +395,156 @@ static async Task<int> RunMode2Async(
     Console.WriteLine($"  Nodes stored : {totalStored:N0}");
     Console.WriteLine($"  Failed       : {totalFailed2:N0}");
     Console.WriteLine($"  Output file  : {sqlitePath}");
+    return 0;
+}
+
+// ── UPDATE MODE: incremental sync from Dynamo Package Manager ─────────────────
+
+static async Task<int> RunUpdateAsync(
+    string sqlitePath, string modelPath, string vocabPath, bool fullRebuild, CancellationToken ct)
+{
+    Console.WriteLine(fullRebuild
+        ? "Full rebuild: downloading all packages from Dynamo Package Manager"
+        : "Update mode: incremental sync from Dynamo Package Manager");
+
+    using var exporter  = new SqliteExporter(sqlitePath);
+
+    DateTime since;
+    if (fullRebuild)
+    {
+        Console.WriteLine("Clearing existing nodes...");
+        exporter.ClearAllNodes();
+        since = DateTime.MinValue;
+    }
+    else
+    {
+        var lastBuilt = exporter.GetLastBuiltAt();
+        since = lastBuilt ?? DateTime.UtcNow.AddYears(-1);
+        Console.WriteLine(lastBuilt.HasValue
+            ? $"Last build: {lastBuilt.Value:yyyy-MM-dd HH:mm:ss} UTC"
+            : "Last build: never — using 1 year ago as cutoff");
+    }
+
+    // ── Phase 1: Fetch updated package list ──────────────────────────────────
+
+    Console.WriteLine(fullRebuild
+        ? "\nPhase 1/3 — Fetching all packages from Dynamo Package Manager..."
+        : $"\nPhase 1/3 — Fetching packages updated since {since:yyyy-MM-dd}...");
+    using var client  = new PackageManagerClient();
+    List<PackageInfo> updated;
+    try
+    {
+        updated = await client.GetPackagesUpdatedSinceAsync(since, ct);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Failed to fetch package list: {ex.Message}");
+        return 1;
+    }
+
+    Console.WriteLine($"  Found {updated.Count:N0} packages to update");
+    if (updated.Count == 0)
+    {
+        Console.WriteLine("\nDB is already up to date.");
+        exporter.SetLastBuiltAt(DateTime.UtcNow);
+        return 0;
+    }
+
+    // ── Phase 2: Download + extract ──────────────────────────────────────────
+
+    Console.WriteLine($"\nPhase 2/3 — Downloading and extracting {updated.Count:N0} packages...");
+
+    var tempDir = Path.Combine(Path.GetTempPath(), $"DynamoCopilot_Update_{DateTime.UtcNow.Ticks}");
+    Directory.CreateDirectory(tempDir);
+
+    var allRecords   = new List<NodeRecord>();
+    var downloaded   = 0;
+    var downloadFail = 0;
+
+    try
+    {
+        foreach (var pkg in updated)
+        {
+            ct.ThrowIfCancellationRequested();
+            WriteProgress($"  [{downloaded + downloadFail + 1}/{updated.Count}] {pkg.Name}");
+            try
+            {
+                var zipPath = await client.DownloadPackageAsync(pkg, tempDir, ct);
+                var records = PackageExtractor.ExtractFromZip(zipPath);
+
+                exporter.DeletePackageNodes(pkg.Name);
+                allRecords.AddRange(records);
+                downloaded++;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\n  WARNING: {pkg.Name} — {ex.Message}");
+                downloadFail++;
+            }
+        }
+    }
+    finally
+    {
+        try { Directory.Delete(tempDir, recursive: true); } catch { }
+    }
+
+    Console.WriteLine($"\n  {downloaded:N0} downloaded, {downloadFail:N0} failed, {allRecords.Count:N0} nodes extracted");
+
+    if (allRecords.Count == 0)
+    {
+        Console.WriteLine("\nNo nodes to embed.");
+        if (downloaded > 0) exporter.SetLastBuiltAt(DateTime.UtcNow);
+        return 0;
+    }
+
+    var deduped = allRecords
+        .GroupBy(r => (r.PackageName, r.Name))
+        .Select(g => g.First())
+        .ToList();
+
+    // ── Phase 3: Embed + store ────────────────────────────────────────────────
+
+    Console.WriteLine($"\nPhase 3/3 — Embedding {deduped.Count:N0} nodes with ONNX model...\n");
+
+    if (!File.Exists(modelPath)) { Console.Error.WriteLine($"Model not found: {modelPath}"); return 1; }
+    if (!File.Exists(vocabPath)) { Console.Error.WriteLine($"Vocab not found: {vocabPath}");  return 1; }
+
+    using var onnx        = new OnnxEmbedder(modelPath, vocabPath);
+    const int BatchSize   = 50;
+    var       totalStored = 0;
+    var       totalFailed = 0;
+
+    for (int i = 0; i < deduped.Count; i += BatchSize)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var batch      = deduped.Skip(i).Take(BatchSize).ToList();
+        var embeddings = await onnx.EmbedBatchAsync(batch, ct);
+
+        var toStore = new List<(NodeRecord, float[])>();
+        for (int j = 0; j < batch.Count; j++)
+        {
+            if (embeddings[j] != null) toStore.Add((batch[j], embeddings[j]!));
+            else totalFailed++;
+        }
+
+        if (toStore.Count > 0)
+        {
+            await exporter.UpsertAsync(toStore, ct);
+            totalStored += toStore.Count;
+        }
+
+        WriteProgress($"  {totalStored:N0}/{deduped.Count:N0} stored"
+            + (totalFailed > 0 ? $"  ({totalFailed:N0} failed)" : ""));
+    }
+
+    exporter.SetLastBuiltAt(DateTime.UtcNow);
+
+    Console.WriteLine($"\n\nDone.");
+    Console.WriteLine($"  Packages updated : {downloaded:N0}");
+    Console.WriteLine($"  Nodes stored     : {totalStored:N0}");
+    Console.WriteLine($"  Nodes failed     : {totalFailed:N0}");
+    Console.WriteLine($"  DB file          : {sqlitePath}");
     return 0;
 }

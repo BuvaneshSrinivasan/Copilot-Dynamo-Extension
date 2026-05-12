@@ -50,6 +50,10 @@ public sealed class SqliteExporter : IDisposable
                 UNIQUE(PackageName, Name)
             );
             CREATE INDEX IF NOT EXISTS idx_nodes_package ON Nodes(PackageName);
+            CREATE TABLE IF NOT EXISTS Metadata (
+                Key   TEXT PRIMARY KEY,
+                Value TEXT NOT NULL
+            );
             """;
         cmd.ExecuteNonQuery();
     }
@@ -115,6 +119,44 @@ public sealed class SqliteExporter : IDisposable
 
             tx.Commit();
         }, ct);
+    }
+
+    public DateTime? GetLastBuiltAt()
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT Value FROM Metadata WHERE Key = 'last_built_at'";
+        var val = cmd.ExecuteScalar() as string;
+        return val != null && DateTime.TryParse(val, null,
+            System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt : null;
+    }
+
+    public void SetLastBuiltAt(DateTime utcNow)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO Metadata (Key, Value) VALUES ('last_built_at', $val)
+            ON CONFLICT(Key) DO UPDATE SET Value = $val
+            """;
+        var p = cmd.CreateParameter(); p.ParameterName = "$val";
+        p.Value = utcNow.ToString("O");
+        cmd.Parameters.Add(p);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void ClearAllNodes()
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Nodes";
+        cmd.ExecuteNonQuery();
+    }
+
+    public int DeletePackageNodes(string packageName)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Nodes WHERE PackageName = $pkg";
+        var p = cmd.CreateParameter(); p.ParameterName = "$pkg"; p.Value = packageName;
+        cmd.Parameters.Add(p);
+        return cmd.ExecuteNonQuery();
     }
 
     public void Dispose() => _conn.Dispose();

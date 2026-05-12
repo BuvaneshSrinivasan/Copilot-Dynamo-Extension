@@ -29,7 +29,7 @@ src/
 ├── DynamoCopilot.Core/          Shared models + LLM service interfaces (used by Extension)
 ├── DynamoCopilot.Extension/     Dynamo WPF add-in (the UI inside Dynamo)
 ├── DynamoCopilot.GraphInterop/  Reflection wrappers around Dynamo internals
-├── DynamoCopilot.NodeIndexer/   CLI tool — builds nodes.db from package zips/folders
+├── DynamoCopilot.NodeIndexer/   CLI tool — builds/updates nodes.db (full rebuild or incremental from dynamopackages.com)
 └── DynamoCopilot.Server/        Cloud backend API
 ```
 
@@ -243,18 +243,33 @@ The `log` parameter is `Action<string>?` — pass `CopilotLogger.Log` from the E
 - Location: `%AppData%\DynamoCopilot\nodes.db`
 - Hosted on GitHub Releases `v1.0.0` as a release asset — the installer downloads it from there.
 - Built by `DynamoCopilot.NodeIndexer` CLI tool.
-- **~186 MB**, 38,188 nodes from 2,878 packages.
+- **40,398 nodes from 2,448 packages** — last full rebuild: 2026-05-12.
+- `nodes.db` stores a `last_built_at` timestamp in its `Metadata` table; the `--update` mode reads this to fetch only packages changed since then.
 
-**Rebuilding nodes.db:**
+**Incremental update (run periodically — monthly recommended):**
+```powershell
+dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- `
+  --update `
+  --sqlite "%AppData%\DynamoCopilot\nodes.db" `
+  --model  "%AppData%\DynamoCopilot\models\model.onnx" `
+  --vocab  "%AppData%\DynamoCopilot\models\vocab.txt"
 ```
-dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- \
-  --packages "C:\Users\BHSS\Downloads\Mass Search\Unpacked" \
-  --sqlite   "%AppData%\DynamoCopilot\nodes.db" \
-  --model    "%AppData%\DynamoCopilot\models\model.onnx" \
-  --vocab    "%AppData%\DynamoCopilot\models\vocab.txt"
-```
+Downloads only packages updated since `last_built_at`, re-indexes them, updates the timestamp.
 
-After rebuilding, upload to the GitHub release:
+**Full rebuild from scratch (use when DB is stale or after a long gap):**
+```powershell
+dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- `
+  --update --full `
+  --sqlite "%AppData%\DynamoCopilot\nodes.db" `
+  --model  "%AppData%\DynamoCopilot\models\model.onnx" `
+  --vocab  "%AppData%\DynamoCopilot\models\vocab.txt"
+```
+Clears all nodes, downloads all packages from `dynamopackages.com`, rebuilds from scratch.
+
+**Download URL format** (resolved 2026-05-12): `http://www.dynamopackages.com/download/{package._id}/{version}`  
+Do NOT use `{version.url}` — that field is a legacy S3 key and always returns 404.
+
+After updating, upload to the GitHub release:
 ```
 gh release upload v1.0.0 assets/nodes.db --repo BuvaneshSrinivasan/Copilot-Dynamo-Extension --clobber
 ```
