@@ -58,3 +58,4 @@ $RECYCLE.BIN/
 
 assets/nodes.db
 assets/*.db
+src/DynamoCopilot.Core/DynamoCopilot.Core.csproj.lscache

@@ -84,15 +84,16 @@ namespace DynamoCopilot.Extension
 
             _authService = new AuthService(settings.EffectiveServerUrl);
 
+            var obsoleteStore   = new ObsoleteNodeStore();
             var onnxEmbedder    = new OnnxEmbeddingService();
-            var localSearch     = new LocalNodeSearchService(onnxEmbedder.IsReady ? onnxEmbedder : null);
+            var localSearch     = new LocalNodeSearchService(onnxEmbedder.IsReady ? onnxEmbedder : null, obsoleteStore);
             var currentPkgDir   = ResolveCurrentPackagesDir(loadedParams);
             var packageState    = new PackageStateService(currentPkgDir);
             var dynamoViewModel = loadedParams.DynamoWindow?.DataContext;
             var downloader      = new DynamoPackageDownloader(dynamoViewModel);
 
             _viewModel = new SuggestNodesPanelViewModel(
-                _authService, localSearch, loadedParams, packageState, downloader, Name);
+                _authService, localSearch, loadedParams, packageState, downloader, obsoleteStore, Name);
 
             _view = new SuggestNodesPanelView(_viewModel);
         }

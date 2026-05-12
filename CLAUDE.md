@@ -147,6 +147,35 @@ The login/register form is a single shared WPF `UserControl` (`AuthFormView.xaml
 
 **Node suggestion cards do NOT appear in the Copilot chat.** If the AI mentions a node name in prose, it stays as text — no interactive cards. All node card functionality is isolated to the Suggest Nodes extension.
 
+### Obsolete node strategy (Suggest Nodes)
+
+nodes.db is built from package metadata and can contain nodes that no longer exist in the latest version of a package (removed or renamed). The obsolete node strategy handles this at two levels:
+
+**Runtime detection (`NodeSuggestionCardViewModel`):**
+- When a user clicks Insert and the insertion fails (`InsertNode` returns false) AND the package is installed, the node is marked obsolete immediately.
+- `_obsoleteStore.MarkObsolete(PackageName, Name)` — persists to disk instantly.
+- `IsObsolete = true` — disables the Insert button (`CanInsert = IsInstalled && !IsDownloading && !IsObsolete`) and shows a red ⚠ banner on the card: *"Node not found in installed package — removed or renamed in a newer version."*
+
+**Persistence (`ObsoleteNodeStore` — `DynamoCopilot.Core/Services/ObsoleteNodeStore.cs`):**
+- Stores `(PackageName, NodeName)` pairs in `%AppData%\DynamoCopilot\obsolete-nodes.json`.
+- Loaded once on startup, saved immediately on each new entry.
+- Thread-safe. Shared between `LocalNodeSearchService` and `NodeSuggestionCardViewModel` via constructor injection.
+
+**Search filtering (`LocalNodeSearchService`):**
+- Accepts `ObsoleteNodeStore` in constructor.
+- In `SearchAsync`, obsolete nodes are filtered out of the cache before scoring — they never appear in results again.
+- The `ObsoleteNodeStore` instance is created in `SuggestNodesViewExtension.CreateView()` and injected into both `LocalNodeSearchService` and `SuggestNodesPanelViewModel` (which passes it to each card).
+
+**Wiring (construction order in `SuggestNodesViewExtension.CreateView`):**
+```csharp
+var obsoleteStore = new ObsoleteNodeStore();
+var localSearch   = new LocalNodeSearchService(embedder, obsoleteStore);
+_viewModel        = new SuggestNodesPanelViewModel(..., obsoleteStore, Name);
+// SuggestNodesPanelViewModel passes obsoleteStore to each NodeSuggestionCardViewModel
+```
+
+**Known limitation:** The nodes.db is still built from XML doc files which can be outdated (new nodes missing, removed nodes still present). The long-term fix is to use reflection (`MetadataLoadContext`) as the primary discovery source for DLL nodes instead of XML docs. This is planned but not yet implemented — see implementation summary in the session history.
+
 ### Spec-first flow (Copilot only)
 
 When the user sends a message, `SendMessageCoreAsync` runs a classifier that decides whether this is a code-generation request. If it is, a `SpecCardViewModel` is shown inline in the chat (as a `ChatMessageType.SpecCard` message) instead of immediately calling the LLM.

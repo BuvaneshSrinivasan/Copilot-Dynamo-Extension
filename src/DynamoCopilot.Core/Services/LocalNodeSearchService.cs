@@ -29,17 +29,21 @@ namespace DynamoCopilot.Core.Services
         // Default result cap
         private const int TopK = 100;
 
-        private readonly string             _dbPath;
-        private readonly IEmbeddingService? _embedder;
+        private readonly string              _dbPath;
+        private readonly IEmbeddingService?  _embedder;
+        private readonly ObsoleteNodeStore?  _obsoleteStore;
 
         // In-memory cache of all node records (loaded once on first search)
         private List<LocalNodeRecord>? _cache;
         private readonly object         _cacheLock = new object();
 
-        public LocalNodeSearchService(IEmbeddingService? embedder = null)
+        public LocalNodeSearchService(
+            IEmbeddingService?  embedder      = null,
+            ObsoleteNodeStore?  obsoleteStore = null)
         {
-            _dbPath  = Path.Combine(DynamoCopilotSettings.AppDataDir, "nodes.db");
-            _embedder = embedder;
+            _dbPath        = Path.Combine(DynamoCopilotSettings.AppDataDir, "nodes.db");
+            _embedder      = embedder;
+            _obsoleteStore = obsoleteStore;
         }
 
         /// <summary>
@@ -52,7 +56,10 @@ namespace DynamoCopilot.Core.Services
         {
             if (string.IsNullOrWhiteSpace(query)) return Array.Empty<NodeSuggestion>();
 
-            var records = await LoadCacheAsync(ct).ConfigureAwait(false);
+            var all     = await LoadCacheAsync(ct).ConfigureAwait(false);
+            var records = _obsoleteStore != null
+                ? all.FindAll(r => !_obsoleteStore.IsObsolete(r.PackageName, r.Name))
+                : all;
             if (records.Count == 0)              return Array.Empty<NodeSuggestion>();
 
             // ── 1. Try vector search ──────────────────────────────────────────

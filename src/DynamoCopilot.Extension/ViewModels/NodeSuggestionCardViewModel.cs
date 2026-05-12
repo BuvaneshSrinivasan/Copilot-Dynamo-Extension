@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using DynamoCopilot.Core.Models;
+using DynamoCopilot.Core.Services;
 using DynamoCopilot.Extension.Commands;
 using DynamoCopilot.Extension.Services;
 
@@ -13,15 +14,17 @@ namespace DynamoCopilot.Extension.ViewModels
     {
         // ── Injected dependencies ─────────────────────────────────────────────
 
-        private readonly PackageStateService    _packageState;
-        private readonly DynamoPackageDownloader _downloader;
+        private readonly PackageStateService        _packageState;
+        private readonly DynamoPackageDownloader    _downloader;
         private readonly Func<NodeSuggestion, bool> _insertAction;
-        private readonly NodeSuggestion         _source;
+        private readonly NodeSuggestion             _source;
+        private readonly ObsoleteNodeStore          _obsoleteStore;
 
         // ── Display state ─────────────────────────────────────────────────────
 
         private bool   _isExpanded;
         private bool   _isDownloading;
+        private bool   _isObsolete;
         private string _statusText = string.Empty;
 
         // ── Display properties ────────────────────────────────────────────────
@@ -72,8 +75,20 @@ namespace DynamoCopilot.Extension.ViewModels
         /// <summary>Download button is active when the package is not yet installed and no download is running.</summary>
         public bool CanDownload => !IsInstalled && !IsDownloading;
 
-        /// <summary>Insert button is active when the package is installed and no download is running.</summary>
-        public bool CanInsert => IsInstalled && !IsDownloading;
+        public bool IsObsolete
+        {
+            get => _isObsolete;
+            private set
+            {
+                _isObsolete = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanInsert));
+                ((RelayCommand)InsertCommand).RaiseCanExecuteChanged();
+            }
+        }
+
+        /// <summary>Insert button is active when the package is installed, not downloading, and not obsolete.</summary>
+        public bool CanInsert => IsInstalled && !IsDownloading && !IsObsolete;
 
         /// <summary>Short status shown below the buttons (errors or progress).</summary>
         public string StatusText
@@ -92,15 +107,18 @@ namespace DynamoCopilot.Extension.ViewModels
         // ── Construction ──────────────────────────────────────────────────────
 
         public NodeSuggestionCardViewModel(
-            NodeSuggestion           node,
-            PackageStateService      packageState,
-            DynamoPackageDownloader  downloader,
-            Func<NodeSuggestion, bool> insertAction)
+            NodeSuggestion             node,
+            PackageStateService        packageState,
+            DynamoPackageDownloader    downloader,
+            Func<NodeSuggestion, bool> insertAction,
+            ObsoleteNodeStore          obsoleteStore)
         {
-            _source       = node         ?? throw new ArgumentNullException(nameof(node));
-            _packageState = packageState ?? throw new ArgumentNullException(nameof(packageState));
-            _downloader   = downloader   ?? throw new ArgumentNullException(nameof(downloader));
-            _insertAction = insertAction ?? throw new ArgumentNullException(nameof(insertAction));
+            _source        = node          ?? throw new ArgumentNullException(nameof(node));
+            _packageState  = packageState  ?? throw new ArgumentNullException(nameof(packageState));
+            _downloader    = downloader    ?? throw new ArgumentNullException(nameof(downloader));
+            _insertAction  = insertAction  ?? throw new ArgumentNullException(nameof(insertAction));
+            _obsoleteStore = obsoleteStore ?? throw new ArgumentNullException(nameof(obsoleteStore));
+            _isObsolete    = obsoleteStore.IsObsolete(node.PackageName ?? string.Empty, node.Name ?? string.Empty);
 
             Name        = node.Name;
             Category    = node.Category    ?? string.Empty;
@@ -159,8 +177,15 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             StatusText = string.Empty;
             var ok = _insertAction(_source);
-            if (!ok)
+            if (!ok && IsInstalled)
+            {
+                _obsoleteStore.MarkObsolete(PackageName, Name);
+                IsObsolete = true;
+            }
+            else if (!ok)
+            {
                 StatusText = "Insert failed. Make sure Dynamo has loaded the package.";
+            }
         }
 
         // ── PackageStateService.Refreshed handler ─────────────────────────────

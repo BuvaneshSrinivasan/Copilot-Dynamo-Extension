@@ -342,6 +342,22 @@
                                TextWrapping="Wrap"
                                Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
 
+                    <!-- Obsolete warning -->
+                    <Border Margin="10,0,10,6"
+                            CornerRadius="5"
+                            Background="#2A1A1A"
+                            BorderBrush="#6E2020"
+                            BorderThickness="1"
+                            Padding="8,6"
+                            Visibility="{Binding IsObsolete, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x26A0; " FontSize="12" Foreground="#F48771" VerticalAlignment="Center"/>
+                            <TextBlock Text="Node not found in installed package — removed or renamed in a newer version."
+                                       FontSize="11" Foreground="#F48771"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Action buttons -->
                     <Grid Margin="10,4,10,10">
                         <Grid.ColumnDefinitions>

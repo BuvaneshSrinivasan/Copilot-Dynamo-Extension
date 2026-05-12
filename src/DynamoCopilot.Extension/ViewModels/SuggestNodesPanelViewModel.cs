@@ -19,6 +19,7 @@ namespace DynamoCopilot.Extension.ViewModels
         private readonly ViewLoadedParams        _dynParams;
         private readonly PackageStateService     _packageState;
         private readonly DynamoPackageDownloader _downloader;
+        private readonly ObsoleteNodeStore       _obsoleteStore;
 
         public AuthFormViewModel AuthForm { get; }
 
@@ -178,6 +179,7 @@ namespace DynamoCopilot.Extension.ViewModels
             ViewLoadedParams         dynParams,
             PackageStateService      packageState,
             DynamoPackageDownloader  downloader,
+            ObsoleteNodeStore        obsoleteStore,
             string                   name = "Suggest Nodes")
         {
             Name                = name;
@@ -186,6 +188,7 @@ namespace DynamoCopilot.Extension.ViewModels
             _dynParams          = dynParams          ?? throw new ArgumentNullException(nameof(dynParams));
             _packageState       = packageState       ?? throw new ArgumentNullException(nameof(packageState));
             _downloader         = downloader         ?? throw new ArgumentNullException(nameof(downloader));
+            _obsoleteStore      = obsoleteStore      ?? throw new ArgumentNullException(nameof(obsoleteStore));
 
             AuthForm = new AuthFormViewModel(_authService);
 
@@ -299,7 +302,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 foreach (var node in results)
                 {
                     var card = new NodeSuggestionCardViewModel(
-                        node, _packageState, _downloader, InsertNodeToCanvas);
+                        node, _packageState, _downloader, InsertNodeToCanvas, _obsoleteStore);
                     if (_packageState.IsInstalled(node.PackageName))
                         InstalledNodeSuggestions.Add(card);
                     else

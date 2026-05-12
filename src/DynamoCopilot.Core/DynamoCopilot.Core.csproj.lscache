@@ -76,6 +76,7 @@ Services/
  LlmServiceFactory.cs
  LocalNodeSearchService.cs
  NodeSuggestService.cs
+ ObsoleteNodeStore.cs
  Providers/
   ClaudeLlmService.cs
   DeepSeekLlmService.cs
@@ -200,6 +201,7 @@ Services/
  LlmServiceFactory.cs
  LocalNodeSearchService.cs
  NodeSuggestService.cs
+ ObsoleteNodeStore.cs
  Providers/
   ClaudeLlmService.cs
   DeepSeekLlmService.cs
