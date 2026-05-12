@@ -157,8 +157,12 @@ namespace DynamoCopilot.Extension.Services
             if (headers == null)
                 return Fail(r, "ListAll() returned null");
 
-            // Find matching PackageHeader by name (case-insensitive)
-            object? matchedHeader = null;
+            // Collect ALL PackageHeaders whose name matches case-insensitively.
+            // The server may have multiple distinct packages with the same name (e.g. different
+            // authors / versions). We compare every match's highest version and pick the winner
+            // so we always download the most up-to-date package, not just whichever ListAll
+            // happens to return first.
+            var matchedHeaders = new List<object>();
             foreach (var h in headers)
             {
                 if (h == null) continue;
@@ -166,54 +170,55 @@ namespace DynamoCopilot.Extension.Services
                     .GetProperty("name", BindingFlags.Public | BindingFlags.Instance)
                     ?.GetValue(h) as string;
                 if (n?.Equals(packageName, StringComparison.OrdinalIgnoreCase) == true)
-                { matchedHeader = h; break; }
+                    matchedHeaders.Add(h);
             }
-            if (matchedHeader == null)
+            if (matchedHeaders.Count == 0)
                 return Fail(r, $"Package \"{packageName}\" not found on the Dynamo package server");
 
-            // PackageHeader._id — the package's unique server ID used for download
-            r.packageId = matchedHeader.GetType()
-                .GetProperty("_id", BindingFlags.Public | BindingFlags.Instance)
-                ?.GetValue(matchedHeader) as string ?? string.Empty;
-            if (string.IsNullOrEmpty(r.packageId))
-                return Fail(r, "PackageHeader._id is empty — cannot download without a package ID");
+            Log($"DownloadZip: found {matchedHeaders.Count} header(s) matching \"{packageName}\" — picking highest version");
 
-            // PackageHeader.versions — pick the numerically highest version string.
-            // Also try to grab PackageVersion.id because the ViewModel uses dep.id (from PackageVersion)
-            // rather than PackageHeader._id when calling DownloadPackage. They are usually the same value,
-            // but prefer the version-level id when available.
-            var versionsList = matchedHeader.GetType()
-                .GetProperty("versions", BindingFlags.Public | BindingFlags.Instance)
-                ?.GetValue(matchedHeader) as IEnumerable;
+            // For each matching header, find its highest version.
+            // Track the globally best (header, version, id) triple.
+            object? matchedHeader = null;
+            var globalBest = new Version(0, 0, 0, 0);
 
-            if (versionsList != null)
+            foreach (var h in matchedHeaders)
             {
-                var best = new Version(0, 0, 0, 0);
-                foreach (var v in versionsList)
+                var headerId = h.GetType()
+                    .GetProperty("_id", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(h) as string ?? string.Empty;
+
+                if (h.GetType()
+                        .GetProperty("versions", BindingFlags.Public | BindingFlags.Instance)
+                        ?.GetValue(h) is not IEnumerable vList) continue;
+
+                foreach (var v in vList)
                 {
                     if (v == null) continue;
                     var vStr = v.GetType()
                         .GetProperty("version", BindingFlags.Public | BindingFlags.Instance)
                         ?.GetValue(v) as string;
-                    if (string.IsNullOrEmpty(vStr)) continue;
+                    if (string.IsNullOrEmpty(vStr) || !Version.TryParse(vStr, out var parsed)) continue;
+                    if (parsed <= globalBest) continue;
 
-                    if (!Version.TryParse(vStr, out var parsed)) continue;
-                    if (parsed <= best) continue;
-
-                    best = parsed;
-                    r.latestVersion = vStr!;
-
-                    // PackageVersion.id overrides PackageHeader._id when present
+                    globalBest        = parsed;
+                    matchedHeader     = h;
+                    r.latestVersion   = vStr!;
+                    // Prefer PackageVersion.id over PackageHeader._id when available
                     var vId = v.GetType()
                         .GetProperty("id", BindingFlags.Public | BindingFlags.Instance)
                         ?.GetValue(v) as string;
-                    if (!string.IsNullOrEmpty(vId))
-                        r.packageId = vId!;
+                    r.packageId = !string.IsNullOrEmpty(vId) ? vId! : headerId;
                 }
             }
 
-            if (string.IsNullOrEmpty(r.latestVersion))
+            if (matchedHeader == null || string.IsNullOrEmpty(r.latestVersion))
                 return Fail(r, $"No valid versions found for package \"{packageName}\"");
+
+            if (string.IsNullOrEmpty(r.packageId))
+                return Fail(r, "PackageHeader._id is empty — cannot download without a package ID");
+
+            Log($"DownloadZip: selected version={r.latestVersion}  packageId={r.packageId}");
 
             // PackageManagerClient.DownloadPackage(string packageId, string version, out string pathToPackage)
             // Method is internal, requires NonPublic flag.
@@ -352,10 +357,14 @@ namespace DynamoCopilot.Extension.Services
                 var pkgArray = Array.CreateInstance(pkg.GetType(), 1);
                 pkgArray.SetValue(pkg, 0);
 
-                // Snapshot SearchModel entry count — if it doesn't increase after LoadPackages,
-                // the PackagesLoaded → OnLibrariesImported event chain failed silently.
+                // Snapshot SearchModel entry count before/after LoadPackages to detect whether the
+                // PackagesLoaded → OnLibrariesImported event chain fired.
+                // NOTE: SearchModel is not accessible on RevitDynamoModel — returns -1 in that case.
+                // Only act on the delta when the count is actually readable (>= 0).
                 int countBefore = GetSearchModelEntryCount(phase1.model);
-                Log($"ExtractAndLoad: SearchModel entries before LoadPackages = {countBefore}");
+                bool searchModelAccessible = countBefore >= 0;
+                Log($"ExtractAndLoad: SearchModel entries before LoadPackages = {countBefore}" +
+                    (searchModelAccessible ? "" : " (not accessible on this DynamoModel variant)"));
 
                 try
                 {
@@ -369,24 +378,38 @@ namespace DynamoCopilot.Extension.Services
                     return (false, "LoadPackages threw: " + Unwrap(ex));
                 }
 
-                int countAfter = GetSearchModelEntryCount(phase1.model);
-                Log($"ExtractAndLoad: SearchModel entries after LoadPackages = {countAfter}  (delta={countAfter - countBefore})");
+                // Log what was actually loaded
+                int nodeLibraryCount = LogLoadedAssemblies(pkg);
+                int customNodeCount  = LogLoadedCustomNodes(pkg);
 
-                // Log Package.LoadedAssemblies to see what was actually loaded
-                LogLoadedAssemblies(pkg);
-
-                if (countAfter <= countBefore)
+                if (searchModelAccessible)
                 {
-                    Log("ExtractAndLoad: event chain added 0 entries — falling back to TryManualLibraryRefresh");
-                    if (phase1.model != null)
-                        TryManualLibraryRefresh(phase1.model, pkg);
+                    int countAfter = GetSearchModelEntryCount(phase1.model);
+                    Log($"ExtractAndLoad: SearchModel entries after LoadPackages = {countAfter}  (delta={countAfter - countBefore})");
 
-                    int countFinal = GetSearchModelEntryCount(phase1.model);
-                    Log($"ExtractAndLoad: SearchModel entries after manual refresh = {countFinal}");
-                    if (countFinal <= countBefore)
+                    if (countAfter <= countBefore)
                     {
-                        Log("ExtractAndLoad: manual refresh also added 0 entries — library will update on restart");
+                        // ZeroTouch event chain produced no new entries — run the manual refresh.
+                        Log("ExtractAndLoad: ZeroTouch event chain added 0 entries — falling back to TryManualLibraryRefresh");
+                        if (phase1.model != null)
+                            TryManualLibraryRefresh(phase1.model, pkg);
+
+                        int countFinal = GetSearchModelEntryCount(phase1.model);
+                        Log($"ExtractAndLoad: SearchModel entries after manual refresh = {countFinal}");
+                        if (countFinal <= countBefore)
+                            Log("ExtractAndLoad: manual refresh also added 0 entries — library will update on restart");
                     }
+                }
+
+                // For DYF-only packages: if LoadPackages didn't register any custom nodes
+                // (e.g. RequestLoadCustomNodeDirectory had no subscriber), call
+                // CustomNodeManager.AddUninitializedCustomNodesInPath directly as a fallback.
+                // This ensures Insert works immediately without requiring a Dynamo restart.
+                if (nodeLibraryCount == 0 && customNodeCount == 0 && !string.IsNullOrEmpty(rootDir))
+                {
+                    var dyfDir = Path.Combine(rootDir, "dyf");
+                    if (Directory.Exists(dyfDir))
+                        TryRegisterDyfNodes(phase1.model, dyfDir);
                 }
 
                 return (true, string.Empty);
@@ -426,7 +449,7 @@ namespace DynamoCopilot.Extension.Services
             catch (Exception ex) { Log($"LogNodeLibraries exception: {ex.Message}"); }
         }
 
-        private static void LogLoadedAssemblies(object pkg)
+        private static int LogLoadedAssemblies(object pkg)
         {
             try
             {
@@ -434,7 +457,7 @@ namespace DynamoCopilot.Extension.Services
                     .GetProperty("LoadedAssemblies", BindingFlags.Public | BindingFlags.Instance)
                     ?.GetValue(pkg) as IEnumerable;
 
-                if (loadedAssemblies == null) { Log("LoadedAssemblies: property not found or null"); return; }
+                if (loadedAssemblies == null) { Log("LoadedAssemblies: property not found or null"); return 0; }
 
                 int total = 0, nodeLibCount = 0;
                 foreach (var pa in loadedAssemblies)
@@ -449,8 +472,34 @@ namespace DynamoCopilot.Extension.Services
                     if (isNodeLib) nodeLibCount++;
                 }
                 Log($"LoadedAssemblies total={total}  nodeLibraries={nodeLibCount}");
+                return nodeLibCount;
             }
-            catch (Exception ex) { Log($"LogLoadedAssemblies exception: {ex.Message}"); }
+            catch (Exception ex) { Log($"LogLoadedAssemblies exception: {ex.Message}"); return 0; }
+        }
+
+        private static int LogLoadedCustomNodes(object pkg)
+        {
+            try
+            {
+                var list = pkg.GetType()
+                    .GetProperty("LoadedCustomNodes", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(pkg) as IEnumerable;
+                if (list == null) { Log("LoadedCustomNodes: property not found or null"); return 0; }
+
+                int count = 0;
+                foreach (var cn in list)
+                {
+                    if (cn == null) continue;
+                    var name = cn.GetType()
+                        .GetProperty("Name", BindingFlags.Public | BindingFlags.Instance)
+                        ?.GetValue(cn) as string ?? "(unknown)";
+                    Log($"  LoadedCustomNode: {name}");
+                    count++;
+                }
+                Log($"LoadedCustomNodes total={count}");
+                return count;
+            }
+            catch (Exception ex) { Log($"LogLoadedCustomNodes exception: {ex.Message}"); return 0; }
         }
 
         /// <summary>
@@ -602,6 +651,65 @@ namespace DynamoCopilot.Extension.Services
             catch (Exception ex)
             {
                 Log($"TryManualLibraryRefresh EXCEPTION: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Fallback for DYF-only packages: directly calls
+        /// CustomNodeManager.AddUninitializedCustomNodesInPath on the package's dyf directory.
+        /// Used when LoadPackages ran but registered 0 custom nodes (e.g. because
+        /// RequestLoadCustomNodeDirectory had no subscriber in this Dynamo variant).
+        /// DynamoModel.CustomNodeManager is a public *field*, so we walk the inheritance chain
+        /// with GetField rather than GetProperty.
+        /// </summary>
+        private static void TryRegisterDyfNodes(object? model, string dyfDir)
+        {
+            try
+            {
+                if (model == null) return;
+
+                // Walk the inheritance chain to find CustomNodeManager as a field.
+                object? cnm = null;
+                var t = model.GetType();
+                while (t != null && cnm == null)
+                {
+                    cnm = t.GetField("CustomNodeManager",
+                              BindingFlags.Public | BindingFlags.NonPublic |
+                              BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                           ?.GetValue(model);
+                    t = t.BaseType;
+                }
+
+                if (cnm == null)
+                {
+                    Log("TryRegisterDyfNodes: CustomNodeManager not found via field lookup");
+                    return;
+                }
+
+                // AddUninitializedCustomNodesInPath(string path, bool isTestMode, bool isPackageMember = false)
+                var addInPath = cnm.GetType().GetMethod(
+                    "AddUninitializedCustomNodesInPath",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    new[] { typeof(string), typeof(bool), typeof(bool) },
+                    null);
+
+                if (addInPath == null)
+                {
+                    Log("TryRegisterDyfNodes: AddUninitializedCustomNodesInPath(string,bool,bool) not found");
+                    return;
+                }
+
+                Log($"TryRegisterDyfNodes: calling AddUninitializedCustomNodesInPath on {dyfDir}");
+                var result = addInPath.Invoke(cnm, new object[] { dyfDir, false, false }) as IEnumerable;
+                int count = 0;
+                if (result != null)
+                    foreach (var _ in result) count++;
+                Log($"TryRegisterDyfNodes: registered {count} custom node(s)");
+            }
+            catch (Exception ex)
+            {
+                Log($"TryRegisterDyfNodes EXCEPTION: {ex.Message}");
             }
         }
 

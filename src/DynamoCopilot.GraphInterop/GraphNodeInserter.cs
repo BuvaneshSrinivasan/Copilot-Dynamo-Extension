@@ -450,14 +450,31 @@ namespace DynamoCopilot.GraphInterop
         {
             try
             {
-                // CustomNodeManager may be internal on DynamoModel (base of RevitDynamoModel).
-                var cnm = dynamoModel.GetType()
+                // DynamoModel.CustomNodeManager is declared as a public *field* (not a property),
+                // so GetProperty returns null for it.  Try GetProperty first (handles any subclass
+                // that wraps it), then fall back to GetField on the full inheritance chain.
+                var modelType = dynamoModel.GetType();
+                var cnm = modelType
                     .GetProperty("CustomNodeManager",
                         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
                     ?.GetValue(dynamoModel);
+
                 if (cnm == null)
                 {
-                    log?.Invoke("[NodeInserter] EnsureCustomNodeLoaded — CustomNodeManager not found (tried Public+NonPublic)");
+                    var t = modelType;
+                    while (t != null && cnm == null)
+                    {
+                        cnm = t.GetField("CustomNodeManager",
+                                  BindingFlags.Public | BindingFlags.NonPublic |
+                                  BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                               ?.GetValue(dynamoModel);
+                        t = t.BaseType;
+                    }
+                }
+
+                if (cnm == null)
+                {
+                    log?.Invoke("[NodeInserter] EnsureCustomNodeLoaded — CustomNodeManager not found (tried Property+Field)");
                     return false;
                 }
 
