@@ -547,6 +547,34 @@
                         </ItemsControl>
                     </StackPanel>
 
+                    <!-- Custom instruction input (always shown as last resort) -->
+                    <StackPanel Margin="0,0,0,12">
+                        <TextBlock Text="Additional instructions (optional)"
+                                   FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding CustomInstruction, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 FontSize="12" Padding="8,6"
+                                 Background="#252526"
+                                 Foreground="{StaticResource TextBrush}"
+                                 BorderBrush="{StaticResource BorderBrush}"
+                                 BorderThickness="1"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="False"
+                                 MaxLines="4"
+                                 CaretBrush="{StaticResource AccentBrush}">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsFocused" Value="True">
+                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+                    </StackPanel>
+
                     <!-- Action buttons -->
                     <StackPanel Orientation="Horizontal">
                         <Button Content="Generate Code"
@@ -1241,6 +1269,38 @@
                     Visibility="{Binding IsLicenceActive, Converter={StaticResource BoolToVis}}">
                 <StackPanel>
 
+                    <!-- API key missing warning banner -->
+                    <Border Background="#3D2000"
+                            BorderBrush="#C97F3A"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="10,7"
+                            Margin="0,0,0,8"
+                            Visibility="{Binding IsApiKeyMissing, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <!-- Line 1: dynamic provider message -->
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#9888;" Foreground="#C97F3A" FontSize="13"
+                                           Margin="0,0,7,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding ApiKeyWarningMessage}"
+                                           Foreground="#F4C771" FontSize="11"
+                                           TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <!-- Line 2: static instruction with real gear icon -->
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <TextBlock Text="Click the"
+                                           Foreground="#F4C771" FontSize="11"
+                                           VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                <Path Data="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"
+                                      Fill="#C97F3A" Width="11" Height="11" Stretch="Uniform"
+                                      VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                <TextBlock Text="icon above to add your API key."
+                                           Foreground="#F4C771" FontSize="11"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Text input + Send button -->
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -1262,6 +1322,9 @@
                                  VerticalScrollBarVisibility="Auto"
                                  CaretBrush="{StaticResource AccentBrush}"
                                  PreviewKeyDown="OnInputKeyDown"
+                                 IsEnabled="{Binding IsChatInputEnabled}"
+                                 ToolTip="Respond to the specification above first"
+                                 ToolTipService.ShowOnDisabled="True"
                                  Margin="0,0,6,0">
                             <TextBox.Style>
                                 <Style TargetType="TextBox">
@@ -1291,7 +1354,8 @@
                         <Button Grid.Column="1"
                                 Width="36" Height="36"
                                 Click="OnSendClick"
-                                Cursor="Hand">
+                                Cursor="Hand"
+                                IsEnabled="{Binding IsChatInputEnabled}">
                             <Button.Style>
                                 <Style TargetType="Button">
                                     <Setter Property="Background" Value="#6EC6F5"/>

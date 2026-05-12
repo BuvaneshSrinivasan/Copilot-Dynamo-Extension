@@ -48,6 +48,10 @@ namespace DynamoCopilot.Core.Models
 
         [JsonPropertyName("questions")]
         public List<ClarifyingQuestion> Questions { get; set; } = new List<ClarifyingQuestion>();
+
+        // Runtime only — not part of the LLM-generated JSON
+        [JsonIgnore]
+        public string CustomInstruction { get; set; } = string.Empty;
     }
 
     /// <summary>Result of the spec-generator classification call.</summary>

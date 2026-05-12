@@ -42,6 +42,7 @@ namespace DynamoCopilot.Extension.ViewModels
     {
         private readonly Func<CodeSpecification, Task> _onConfirm;
         private readonly Action _onCancel;
+        private string _customInstruction = string.Empty;
 
         public CodeSpecification Spec { get; }
 
@@ -49,6 +50,12 @@ namespace DynamoCopilot.Extension.ViewModels
             = new ObservableCollection<ClarifyingQuestionViewModel>();
 
         public bool HasQuestions => Questions.Count > 0;
+
+        public string CustomInstruction
+        {
+            get => _customInstruction;
+            set { _customInstruction = value; OnPropertyChanged(); }
+        }
 
         // Summary text shown in the card header
         public string StepsSummary
@@ -94,6 +101,8 @@ namespace DynamoCopilot.Extension.ViewModels
             // Merge answers back into the spec questions before handing off
             for (int i = 0; i < Questions.Count && i < Spec.Questions.Count; i++)
                 Spec.Questions[i].Answer = Questions[i].Answer;
+
+            Spec.CustomInstruction = _customInstruction.Trim();
 
             _ = _onConfirm(Spec);
         }

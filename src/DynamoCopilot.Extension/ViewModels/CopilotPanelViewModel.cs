@@ -180,6 +180,28 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _isLicenceActive = value; OnPropertyChanged(); }
         }
 
+        public bool IsApiKeyMissing =>
+            _settings.AiProvider != AiProvider.Ollama &&
+            string.IsNullOrWhiteSpace(_settings.GetApiKey(_settings.AiProvider));
+
+        public bool IsApiKeyPresent => !IsApiKeyMissing;
+
+        public string ApiKeyWarningMessage
+        {
+            get
+            {
+                var providerName = _settings.AiProvider switch
+                {
+                    AiProvider.OpenAI   => "OpenAI",
+                    AiProvider.Gemini   => "Gemini",
+                    AiProvider.Claude   => "Claude (Anthropic)",
+                    AiProvider.DeepSeek => "DeepSeek",
+                    _                   => _settings.AiProvider.ToString()
+                };
+                return $"No API key configured for {providerName}.";
+            }
+        }
+
         public int TokensUsed
         {
             get => _tokensUsed;
@@ -209,6 +231,11 @@ namespace DynamoCopilot.Extension.ViewModels
         }
 
         public bool IsNotStreaming => !_isStreaming;
+
+        public bool IsSpecPending => _specState.HasPendingSpec;
+
+        // Chat input is enabled only when an API key is present AND no spec card is waiting for a response
+        public bool IsChatInputEnabled => IsApiKeyPresent && !IsSpecPending;
 
         public string StatusMessage
         {
@@ -261,6 +288,9 @@ namespace DynamoCopilot.Extension.ViewModels
             (_llmService as IDisposable)?.Dispose();
             _llmService    = LlmServiceFactory.Create(_settings);
             _specGenerator = new SpecGeneratorService(_llmService);
+            OnPropertyChanged(nameof(IsApiKeyMissing));
+            OnPropertyChanged(nameof(IsApiKeyPresent));
+            OnPropertyChanged(nameof(ApiKeyWarningMessage));
         }
 
         // ── Startup auth check ────────────────────────────────────────────────────
@@ -476,15 +506,22 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             CopilotLogger.Log("ShowSpecCard", "SetPending");
             _specState.SetPending(spec);
+            NotifySpecStateChanged();
+
+            ChatMessageViewModel? msgVm = null;
 
             CopilotLogger.Log("ShowSpecCard", "creating SpecCardViewModel");
             var cardVm = new SpecCardViewModel(
                 spec,
                 onConfirm: s => ConfirmSpecAsync(s),
-                onCancel:  CancelPendingSpec);
+                onCancel:  () =>
+                {
+                    if (msgVm != null) Messages.Remove(msgVm);
+                    CancelPendingSpec();
+                });
 
             CopilotLogger.Log("ShowSpecCard", "creating ChatMessageViewModel");
-            var msgVm = new ChatMessageViewModel
+            msgVm = new ChatMessageViewModel
             {
                 Role        = ChatRole.Assistant,
                 MessageType = ChatMessageType.SpecCard,
@@ -505,8 +542,9 @@ namespace DynamoCopilot.Extension.ViewModels
                 return;
             }
 
-            CopilotLogger.Log("ConfirmSpec", $"steps={spec.Steps.Count}  questions={spec.Questions.Count}");
+            CopilotLogger.Log("ConfirmSpec", $"steps={spec.Steps.Count}  questions={spec.Questions.Count}  customInstruction={!string.IsNullOrEmpty(spec.CustomInstruction)}");
             _specState.Clear();
+            NotifySpecStateChanged();
 
             // Build a code-generation request from the confirmed spec
             var sb = new System.Text.StringBuilder();
@@ -539,6 +577,12 @@ namespace DynamoCopilot.Extension.ViewModels
                         sb.AppendLine($"- {q.Question} → {q.Answer}");
             }
 
+            if (!string.IsNullOrWhiteSpace(spec.CustomInstruction))
+            {
+                sb.AppendLine();
+                sb.AppendLine($"**Additional instructions from user:** {spec.CustomInstruction}");
+            }
+
             sb.AppendLine();
             sb.AppendLine("Return the complete, runnable Python script.");
 
@@ -547,7 +591,14 @@ namespace DynamoCopilot.Extension.ViewModels
             var engineName  = DetectPythonEngine();
             var codeRequest = sb.ToString();
 
-            // Add this synthetic request to history so the LLM has context
+            // Show the custom instruction as a visible "You" bubble before the AI response
+            if (!string.IsNullOrWhiteSpace(spec.CustomInstruction))
+            {
+                AddMessage(new ChatMessageViewModel { Role = ChatRole.User, Content = spec.CustomInstruction });
+                _currentSession.Messages.Add(new ChatMessage { Role = ChatRole.User, Content = spec.CustomInstruction });
+            }
+
+            // Add the full code-generation request to history so the LLM has complete context
             _currentSession.Messages.Add(new ChatMessage
             {
                 Role    = ChatRole.User,
@@ -560,6 +611,7 @@ namespace DynamoCopilot.Extension.ViewModels
         private void CancelPendingSpec()
         {
             _specState.Clear();
+            NotifySpecStateChanged();
             ShowStatus("Specification cancelled.");
         }
 
@@ -891,6 +943,12 @@ namespace DynamoCopilot.Extension.ViewModels
             Messages.Add(vm);
             ShowWelcome = false;
             RequestScrollToBottom?.Invoke();
+        }
+
+        private void NotifySpecStateChanged()
+        {
+            OnPropertyChanged(nameof(IsSpecPending));
+            OnPropertyChanged(nameof(IsChatInputEnabled));
         }
 
         private void ShowStatus(string msg)
