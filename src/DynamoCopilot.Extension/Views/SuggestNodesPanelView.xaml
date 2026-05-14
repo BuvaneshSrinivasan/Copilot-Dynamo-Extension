@@ -352,7 +352,7 @@
                             Visibility="{Binding IsObsolete, Converter={StaticResource BoolToVis}}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#x26A0; " FontSize="12" Foreground="#F48771" VerticalAlignment="Center"/>
-                            <TextBlock Text="Node not found in installed package — removed or renamed in a newer version."
+                            <TextBlock Text="{Binding ObsoleteMessage}"
                                        FontSize="11" Foreground="#F48771"
                                        TextWrapping="Wrap"/>
                         </StackPanel>

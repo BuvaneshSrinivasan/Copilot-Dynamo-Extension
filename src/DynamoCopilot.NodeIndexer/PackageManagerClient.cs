@@ -61,13 +61,18 @@ public sealed class PackageManagerClient : IDisposable
 
     /// <summary>
     /// Downloads the package zip to <paramref name="destDir"/> and returns the local file path.
+    /// When <paramref name="skipIfExists"/> is true, returns the cached path without downloading
+    /// if the zip is already present (used with --keep-packages).
     /// </summary>
     public async Task<string> DownloadPackageAsync(
-        PackageInfo pkg, string destDir, CancellationToken ct = default)
+        PackageInfo pkg, string destDir, CancellationToken ct = default, bool skipIfExists = false)
     {
         var safeName = string.Concat(pkg.Name.Select(
             c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
         var destPath = Path.Combine(destDir, safeName + ".zip");
+
+        if (skipIfExists && File.Exists(destPath))
+            return destPath;
 
         using var response = await _http.GetAsync(
             pkg.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct);

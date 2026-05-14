@@ -84,7 +84,8 @@ namespace DynamoCopilot.Extension
 
             _authService = new AuthService(settings.EffectiveServerUrl);
 
-            var obsoleteStore   = new ObsoleteNodeStore();
+            var revitYear       = TryGetRevitYear();
+            var obsoleteStore   = new ObsoleteNodeStore(revitYear);
             var onnxEmbedder    = new OnnxEmbeddingService();
             var localSearch     = new LocalNodeSearchService(onnxEmbedder.IsReady ? onnxEmbedder : null, obsoleteStore);
             var currentPkgDir   = ResolveCurrentPackagesDir(loadedParams);
@@ -116,6 +117,35 @@ namespace DynamoCopilot.Extension
             var newMenu = new MenuItem { Header = tabName };
             menuItems.Add(newMenu);
             return newMenu;
+        }
+
+        private static int? TryGetRevitYear()
+        {
+            try
+            {
+                var dmType = Type.GetType(
+                    "RevitServices.Persistence.DocumentManager, RevitServices",
+                    throwOnError: false);
+                if (dmType == null) return null;
+
+                var instance = dmType.GetProperty("Instance",
+                    BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+                if (instance == null) return null;
+
+                var uiApp = dmType.GetProperty("CurrentUIApplication",
+                    BindingFlags.Public | BindingFlags.Instance)?.GetValue(instance);
+                if (uiApp == null) return null;
+
+                var app = uiApp.GetType().GetProperty("Application",
+                    BindingFlags.Public | BindingFlags.Instance)?.GetValue(uiApp);
+                if (app == null) return null;
+
+                var versionNumber = app.GetType().GetProperty("VersionNumber",
+                    BindingFlags.Public | BindingFlags.Instance)?.GetValue(app) as string;
+
+                return int.TryParse(versionNumber, out var year) ? year : null;
+            }
+            catch { return null; }
         }
 
         private static string? ResolveCurrentPackagesDir(ViewLoadedParams loadedParams)

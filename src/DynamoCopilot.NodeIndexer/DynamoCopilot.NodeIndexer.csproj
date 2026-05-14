@@ -14,6 +14,8 @@
     <!-- ONNX embedder for local SQLite export -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.13" />
+    <!-- Reflection-only assembly loading for ZeroTouch/NodeModel discovery -->
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

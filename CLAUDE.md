@@ -149,32 +149,47 @@ The login/register form is a single shared WPF `UserControl` (`AuthFormView.xaml
 
 ### Obsolete node strategy (Suggest Nodes)
 
-nodes.db is built from package metadata and can contain nodes that no longer exist in the latest version of a package (removed or renamed). The obsolete node strategy handles this at two levels:
+nodes.db can contain nodes that no longer exist in the installed version of a package (removed or renamed), or that call Revit API removed in a newer Revit version. The ObsoleteNodeStore is the primary runtime defence for both cases — it is self-healing and version-aware.
 
 **Runtime detection (`NodeSuggestionCardViewModel`):**
 - When a user clicks Insert and the insertion fails (`InsertNode` returns false) AND the package is installed, the node is marked obsolete immediately.
-- `_obsoleteStore.MarkObsolete(PackageName, Name)` — persists to disk instantly.
-- `IsObsolete = true` — disables the Insert button (`CanInsert = IsInstalled && !IsDownloading && !IsObsolete`) and shows a red ⚠ banner on the card: *"Node not found in installed package — removed or renamed in a newer version."*
+- `_obsoleteStore.MarkObsolete(PackageName, Name)` — persists to disk instantly, **scoped to the current Revit year**.
+- `IsObsolete = true` — disables the Insert button and shows a red ⚠ banner. The banner text comes from `ObsoleteMessage` (computed property on the card VM): *"Node not found — may have been removed or renamed in Revit 2025."* The year is read from `_obsoleteStore.CurrentRevitYear`; falls back to generic text if the year is unknown.
 
 **Persistence (`ObsoleteNodeStore` — `DynamoCopilot.Core/Services/ObsoleteNodeStore.cs`):**
-- Stores `(PackageName, NodeName)` pairs in `%AppData%\DynamoCopilot\obsolete-nodes.json`.
-- Loaded once on startup, saved immediately on each new entry.
-- Thread-safe. Shared between `LocalNodeSearchService` and `NodeSuggestionCardViewModel` via constructor injection.
+- Stores `(PackageName, NodeName, RevitYear?)` tuples in `%AppData%\DynamoCopilot\obsolete-nodes.json`.
+- **Version-aware:** a node marked obsolete on Revit 2023 is hidden only on 2023+, not on 2022 where it may still work.
+- `IsObsolete(pkg, name)` returns true when there is an entry matching (pkg, name, currentYear) OR a year-less globally-obsolete entry.
+- `MarkObsolete(pkg, name)` tags the entry with `_currentRevitYear` set at construction.
+- `CurrentRevitYear` property — exposed so `NodeSuggestionCardViewModel` can build the banner message.
+- Loaded once on startup, saved immediately on each new entry. Thread-safe.
+- **`obsolete-nodes.json` is never deleted by the installer** — it survives reinstalls and version upgrades.
+
+**JSON format (`obsolete-nodes.json`):**
+```json
+[
+  ["ObjectGNodes", "Analysis.GetAnalyticalModel", "2023"],  // obsolete on Revit 2023 only
+  ["SomePackage",  "SomeNode",                    ""],       // globally obsolete
+  ["OldPackage",   "OldNode"]                                // legacy 2-element — treated as globally obsolete
+]
+```
 
 **Search filtering (`LocalNodeSearchService`):**
 - Accepts `ObsoleteNodeStore` in constructor.
 - In `SearchAsync`, obsolete nodes are filtered out of the cache before scoring — they never appear in results again.
-- The `ObsoleteNodeStore` instance is created in `SuggestNodesViewExtension.CreateView()` and injected into both `LocalNodeSearchService` and `SuggestNodesPanelViewModel` (which passes it to each card).
 
 **Wiring (construction order in `SuggestNodesViewExtension.CreateView`):**
 ```csharp
-var obsoleteStore = new ObsoleteNodeStore();
+var revitYear     = TryGetRevitYear();           // reads VersionNumber via RevitServices reflection
+var obsoleteStore = new ObsoleteNodeStore(revitYear);
 var localSearch   = new LocalNodeSearchService(embedder, obsoleteStore);
 _viewModel        = new SuggestNodesPanelViewModel(..., obsoleteStore, Name);
 // SuggestNodesPanelViewModel passes obsoleteStore to each NodeSuggestionCardViewModel
 ```
 
-**Known limitation:** The nodes.db is still built from XML doc files which can be outdated (new nodes missing, removed nodes still present). The long-term fix is to use reflection (`MetadataLoadContext`) as the primary discovery source for DLL nodes instead of XML docs. This is planned but not yet implemented — see implementation summary in the session history.
+**`TryGetRevitYear()`** in `SuggestNodesViewExtension` — reads `RevitServices.Persistence.DocumentManager.Instance.CurrentUIApplication.Application.VersionNumber` via reflection. Returns `null` outside a Revit context.
+
+**Known limitation:** Packages that call removed Revit API *internally* (not in their public method signature) cannot be detected statically. For example `ObjectGNodes.Analysis.GetAnalyticalModel` returns `Dictionary<T,U>` — `AnalyticalModel` only appears inside the method body. The ObsoleteNodeStore handles these at runtime: the first failed insert marks the node obsolete for that Revit year, and it never appears in search results again on that machine.
 
 ### Spec-first flow (Copilot only)
 
@@ -272,44 +287,70 @@ The `log` parameter is `Action<string>?` — pass `CopilotLogger.Log` from the E
 - Location: `%AppData%\DynamoCopilot\nodes.db`
 - Hosted on GitHub Releases `v1.0.0` as a release asset — the installer downloads it from there.
 - Built by `DynamoCopilot.NodeIndexer` CLI tool.
-- **40,398 nodes from 2,448 packages** — last full rebuild: 2026-05-12.
+- **67,140 nodes from 2,448 packages** — last full rebuild: 2026-05-13.
 - `nodes.db` stores a `last_built_at` timestamp in its `Metadata` table; the `--update` mode reads this to fetch only packages changed since then.
 
 **Incremental update (run periodically — monthly recommended):**
 ```powershell
 dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- `
   --update `
-  --sqlite "%AppData%\DynamoCopilot\nodes.db" `
-  --model  "%AppData%\DynamoCopilot\models\model.onnx" `
-  --vocab  "%AppData%\DynamoCopilot\models\vocab.txt"
+  --sqlite        "$env:APPDATA\DynamoCopilot\nodes.db" `
+  --model         "$env:APPDATA\DynamoCopilot\models\model.onnx" `
+  --vocab         "$env:APPDATA\DynamoCopilot\models\vocab.txt" `
+  --keep-packages "$env:APPDATA\DynamoCopilot\packages"
 ```
-Downloads only packages updated since `last_built_at`, re-indexes them, updates the timestamp.
+Downloads only packages updated since `last_built_at`, re-indexes them, updates the timestamp. Zips are saved to `--keep-packages` dir and skipped on future runs.
 
 **Full rebuild from scratch (use when DB is stale or after a long gap):**
 ```powershell
 dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- `
   --update --full `
-  --sqlite "%AppData%\DynamoCopilot\nodes.db" `
-  --model  "%AppData%\DynamoCopilot\models\model.onnx" `
-  --vocab  "%AppData%\DynamoCopilot\models\vocab.txt"
+  --sqlite        "$env:APPDATA\DynamoCopilot\nodes.db" `
+  --model         "$env:APPDATA\DynamoCopilot\models\model.onnx" `
+  --vocab         "$env:APPDATA\DynamoCopilot\models\vocab.txt" `
+  --keep-packages "$env:APPDATA\DynamoCopilot\packages"
 ```
-Clears all nodes, downloads all packages from `dynamopackages.com`, rebuilds from scratch.
+Clears all nodes, downloads all 2,448 packages, rebuilds from scratch. Cached zips in `--keep-packages` are skipped on re-download (`skipIfExists`).
 
 **Download URL format** (resolved 2026-05-12): `http://www.dynamopackages.com/download/{package._id}/{version}`  
 Do NOT use `{version.url}` — that field is a legacy S3 key and always returns 404.
 
 After updating, upload to the GitHub release:
+```powershell
+gh release upload v1.0.0 "$env:APPDATA\DynamoCopilot\nodes.db" --repo BuvaneshSrinivasan/Copilot-Dynamo-Extension --clobber
 ```
-gh release upload v1.0.0 assets/nodes.db --repo BuvaneshSrinivasan/Copilot-Dynamo-Extension --clobber
+
+To download the GitHub release version locally (e.g. to replace a dev copy with dead schema columns):
+```powershell
+gh release download v1.0.0 --repo BuvaneshSrinivasan/Copilot-Dynamo-Extension --pattern "nodes.db" --output "$env:APPDATA\DynamoCopilot\nodes.db" --clobber
+```
+
+**Diagnostic flags (NodeIndexer):**
+```powershell
+# Show total node count and last_built_at timestamp
+dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- --stats --sqlite "$env:APPDATA\DynamoCopilot\nodes.db"
+
+# List all nodes extracted from a specific package zip (no embedding)
+dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- --inspect-pkg "C:\path\to\Package.zip"
+
+# Inspect a DLL's referenced assemblies and Analysis class method signatures
+dotnet run --project src/DynamoCopilot.NodeIndexer -c Release -f net8.0 -- --inspect-dll "C:\path\to\bin\SomeDll.dll"
 ```
 
 **`node_libraries` filter (critical correctness rule):**
 
-`PackageExtractor` only indexes XML doc files whose base filename matches an assembly listed in `pkg.json`'s `node_libraries` field. This mirrors Dynamo's own `Package.IsNodeLibrary` logic (`Package.cs:459`):
+`PackageExtractor` only indexes DLLs whose base filename matches an assembly listed in `pkg.json`'s `node_libraries` field. This mirrors Dynamo's own `Package.IsNodeLibrary` logic (`Package.cs:459`):
 - `node_libraries` absent → index all DLLs (legacy packages)
 - `node_libraries` present → only index DLLs listed there
 
 **Do not remove this filter.** Without it, packages that bundle third-party DLLs (e.g. Summerisle bundles LunchBox.dll) produce ghost node suggestions — nodes that exist in a bundled DLL but are never exposed by that package in Dynamo.
+
+**Extraction approach (reflection-based):**
+- **DYF nodes**: both XML (Dynamo 1.x) and JSON (Dynamo 2.x) formats handled by `DyfParser`
+- **ZeroTouch nodes**: discovered via `MetadataLoadContext` (`DeclaredOnly` methods on public + nested-public, non-(abstract-and-not-sealed) types). `GetParameters()` is intentionally not called — it can stack-overflow on packages with deeply nested generic type signatures referencing unresolvable Dynamo assemblies.
+- **NodeModel nodes**: types with `[NodeName("...")]` attribute
+- Attribute access uses per-attribute try-catch (Dynamo SDK assemblies are not in the MLC resolver)
+- A dynamic blocklist is built from the installed DynamoForRevit folder — any DLL found there is never indexed from a third-party package (prevents ghost nodes from bundled Dynamo/Revit DLLs)
 
 ---
 

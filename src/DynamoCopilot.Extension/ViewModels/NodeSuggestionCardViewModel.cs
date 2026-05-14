@@ -99,6 +99,17 @@ namespace DynamoCopilot.Extension.ViewModels
 
         public bool HasStatus => !string.IsNullOrWhiteSpace(_statusText);
 
+        public string ObsoleteMessage
+        {
+            get
+            {
+                var year = _obsoleteStore.CurrentRevitYear;
+                return year.HasValue
+                    ? $"Node not found — may have been removed or renamed in Revit {year}."
+                    : "Node not found in installed package — removed or renamed in a newer version.";
+            }
+        }
+
         // ── Commands ──────────────────────────────────────────────────────────
 
         public ICommand DownloadCommand { get; }

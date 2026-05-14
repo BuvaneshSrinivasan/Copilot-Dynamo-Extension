@@ -159,5 +159,14 @@ public sealed class SqliteExporter : IDisposable
         return cmd.ExecuteNonQuery();
     }
 
+    public void PrintStats()
+    {
+        using var c = _conn.CreateCommand();
+        c.CommandText = "SELECT COUNT(*) FROM Nodes";
+        Console.WriteLine($"Total nodes : {c.ExecuteScalar()}");
+        c.CommandText = "SELECT Value FROM Metadata WHERE Key = 'last_built_at'";
+        Console.WriteLine($"Last built  : {c.ExecuteScalar() ?? "unknown"}");
+    }
+
     public void Dispose() => _conn.Dispose();
 }

@@ -35,14 +35,39 @@ using DynamoCopilot.NodeIndexer.Models;
 
 // ── ARGUMENT PARSING ──────────────────────────────────────────────────────────
 
-var packagesDir = GetArg(args, "--packages");
-var connString  = GetArg(args, "--connection");   // Mode 1
-var ollamaUrl   = GetArg(args, "--ollama-url") ?? "http://localhost:11434";
-var sqlitePath  = GetArg(args, "--sqlite");        // Mode 2 / Update
-var modelPath   = GetArg(args, "--model");
-var vocabPath2  = GetArg(args, "--vocab");
-bool updateMode = args.Contains("--update");
-bool fullRebuild = args.Contains("--full");
+var packagesDir     = GetArg(args, "--packages");
+var connString      = GetArg(args, "--connection");     // Mode 1
+var ollamaUrl       = GetArg(args, "--ollama-url") ?? "http://localhost:11434";
+var sqlitePath      = GetArg(args, "--sqlite");          // Mode 2 / Update
+var modelPath       = GetArg(args, "--model");
+var vocabPath2      = GetArg(args, "--vocab");
+var keepPackagesDir = GetArg(args, "--keep-packages");   // Optional persistent zip cache
+bool updateMode     = args.Contains("--update");
+bool fullRebuild    = args.Contains("--full");
+
+if (args.Contains("--stats") && sqlitePath != null)
+{
+    using var db   = new SqliteExporter(sqlitePath);
+    db.PrintStats();
+    return 0;
+}
+
+var inspectDll = GetArg(args, "--inspect-dll");
+if (inspectDll != null)
+{
+    PackageExtractor.InspectDll(inspectDll);
+    return 0;
+}
+
+var inspectPkg = GetArg(args, "--inspect-pkg");
+if (inspectPkg != null)
+{
+    var nodes = PackageExtractor.ExtractFromZip(inspectPkg);
+    Console.WriteLine($"Extracted {nodes.Count} nodes from {Path.GetFileName(inspectPkg)}");
+    foreach (var n in nodes.OrderBy(n => n.NodeType).ThenBy(n => n.Name))
+        Console.WriteLine($"  [{n.NodeType,10}] {n.Name}");
+    return 0;
+}
 
 bool mode2 = sqlitePath != null && !updateMode;
 
@@ -62,7 +87,8 @@ if (updateMode)
     if (!File.Exists(sqlitePath)) { Console.Error.WriteLine($"nodes.db not found: {sqlitePath}"); return 1; }
     if (!File.Exists(modelPath))  { Console.Error.WriteLine($"Model not found: {modelPath}");     return 1; }
     if (!File.Exists(vocabPath2)) { Console.Error.WriteLine($"Vocab not found: {vocabPath2}");    return 1; }
-    return await RunUpdateAsync(sqlitePath, modelPath, vocabPath2, fullRebuild, ct);
+    if (keepPackagesDir != null)  Directory.CreateDirectory(keepPackagesDir);
+    return await RunUpdateAsync(sqlitePath, modelPath, vocabPath2, fullRebuild, keepPackagesDir, ct);
 }
 
 if (packagesDir == null || (!mode2 && connString == null))
@@ -73,14 +99,16 @@ if (packagesDir == null || (!mode2 && connString == null))
             --update \
             --sqlite  <path to existing nodes.db>        \
             --model   <path to all-MiniLM-L6-v2.onnx>   \
-            --vocab   <path to vocab.txt>
+            --vocab   <path to vocab.txt>                \
+            [--keep-packages <dir>]    (persist downloaded zips; skips re-download on next run)
 
         Usage — Full rebuild (re-download all packages, clear and rebuild nodes.db):
           dotnet run -- \
             --update --full \
             --sqlite  <path to nodes.db>                 \
             --model   <path to all-MiniLM-L6-v2.onnx>   \
-            --vocab   <path to vocab.txt>
+            --vocab   <path to vocab.txt>                \
+            [--keep-packages <dir>]    (persist downloaded zips; skips re-download on next run)
 
         Usage — Mode 1 (PostgreSQL + Ollama):
           dotnet run -- \
@@ -401,7 +429,8 @@ static async Task<int> RunMode2Async(
 // ── UPDATE MODE: incremental sync from Dynamo Package Manager ─────────────────
 
 static async Task<int> RunUpdateAsync(
-    string sqlitePath, string modelPath, string vocabPath, bool fullRebuild, CancellationToken ct)
+    string sqlitePath, string modelPath, string vocabPath, bool fullRebuild,
+    string? keepPackagesDir, CancellationToken ct)
 {
     Console.WriteLine(fullRebuild
         ? "Full rebuild: downloading all packages from Dynamo Package Manager"
@@ -454,8 +483,13 @@ static async Task<int> RunUpdateAsync(
 
     Console.WriteLine($"\nPhase 2/3 — Downloading and extracting {updated.Count:N0} packages...");
 
-    var tempDir = Path.Combine(Path.GetTempPath(), $"DynamoCopilot_Update_{DateTime.UtcNow.Ticks}");
-    Directory.CreateDirectory(tempDir);
+    // Use a persistent dir when --keep-packages is specified so zips survive
+    // between runs (skipIfExists avoids re-downloading on the next full rebuild).
+    // Otherwise use a temp dir that is always cleaned up.
+    bool usingTempDir  = keepPackagesDir == null;
+    var  workDir       = keepPackagesDir
+        ?? Path.Combine(Path.GetTempPath(), $"DynamoCopilot_Update_{DateTime.UtcNow.Ticks}");
+    Directory.CreateDirectory(workDir);
 
     var allRecords   = new List<NodeRecord>();
     var downloaded   = 0;
@@ -469,7 +503,8 @@ static async Task<int> RunUpdateAsync(
             WriteProgress($"  [{downloaded + downloadFail + 1}/{updated.Count}] {pkg.Name}");
             try
             {
-                var zipPath = await client.DownloadPackageAsync(pkg, tempDir, ct);
+                var zipPath = await client.DownloadPackageAsync(
+                    pkg, workDir, ct, skipIfExists: !usingTempDir);
                 var records = PackageExtractor.ExtractFromZip(zipPath);
 
                 exporter.DeletePackageNodes(pkg.Name);
@@ -486,7 +521,8 @@ static async Task<int> RunUpdateAsync(
     }
     finally
     {
-        try { Directory.Delete(tempDir, recursive: true); } catch { }
+        if (usingTempDir)
+            try { Directory.Delete(workDir, recursive: true); } catch { }
     }
 
     Console.WriteLine($"\n  {downloaded:N0} downloaded, {downloadFail:N0} failed, {allRecords.Count:N0} nodes extracted");

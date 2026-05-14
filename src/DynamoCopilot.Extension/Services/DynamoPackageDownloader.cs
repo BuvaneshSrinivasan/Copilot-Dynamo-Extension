@@ -570,6 +570,7 @@ namespace DynamoCopilot.Extension.Services
                 foreach (var pa in loadedAssemblies)
                 {
                     if (pa == null) continue;
+
                     var paType = pa.GetType();
 
                     var isNodeLib = paType
