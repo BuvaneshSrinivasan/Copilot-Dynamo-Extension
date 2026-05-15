@@ -71,7 +71,7 @@ namespace DynamoCopilot.Extension.Services
                 if (_headerWritten) return;
                 // Ensure directory exists (AppData\DynamoCopilot may not exist on first run)
                 Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-                var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "?.?.?.?";
+                var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?.?.?";
                 var header  = $"{new string('=', 72)}{Environment.NewLine}" +
                               $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] DynamoCopilot session start  v{version}{Environment.NewLine}" +
                               $"  LogPath : {LogPath}{Environment.NewLine}" +
