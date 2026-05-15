@@ -122,6 +122,8 @@ namespace DynamoCopilot.Extension
                 settings, _authService, historyService, loadedParams, Name);
 
             _view = new CopilotPanelView(_viewModel);
+
+            _ = UpdateBannerViewModel.Instance.StartAsync(settings.EffectiveServerUrl);
         }
 
         /// <summary>

@@ -25,14 +25,24 @@
 #>
 
 param(
-    [string]$Version = "1.0.0"
+    [string]$Version = ""   # Leave blank to read from the Extension .csproj <Version> tag
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# ── Resolve version from .csproj if not supplied ──────────────────────────────
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $csprojPath = Join-Path $PSScriptRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
+    $xml = [xml](Get-Content $csprojPath)
+    $Version = ($xml.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ }) | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($Version)) { throw "No <Version> tag found in $csprojPath" }
+    Write-Host "Version from .csproj: $Version" -ForegroundColor DarkGray
+}
+
 $RepoRoot             = $PSScriptRoot
 $ExtProj              = Join-Path $RepoRoot "src\DynamoCopilot.Extension\DynamoCopilot.Extension.csproj"
+$UpdaterProj          = Join-Path $RepoRoot "installer-wpf\DynamoCopilot.Updater\DynamoCopilot.Updater.csproj"
 $InstallerProj        = Join-Path $RepoRoot "installer-wpf\DynamoCopilot.Installer.csproj"
 $BootstrapperProj     = Join-Path $RepoRoot "installer-wpf\Bootstrapper\Bootstrapper.csproj"
 $StagingDist          = Join-Path $RepoRoot "installer-wpf\staging-dist"
@@ -89,6 +99,30 @@ foreach ($Tfm in @("net48", "net8.0-windows")) {
             }
     }
 }
+
+# ── Build Updater (net48 helper — applied after Dynamo closes) ───────────────
+
+Write-Host "`n==> Building DynamoCopilot.Updater (net48) ..." -ForegroundColor Cyan
+
+$UpdaterOut = Join-Path $RepoRoot "installer-wpf\UpdaterOut"
+
+& dotnet publish $UpdaterProj `
+    --configuration Release `
+    --framework     net48 `
+    --output        $UpdaterOut `
+    -p:Version=$Version `
+    -p:AssemblyVersion=$Version
+
+if ($LASTEXITCODE -ne 0) { throw "Updater build failed" }
+
+# Place Updater.exe at the root of staging-dist so it lands in
+# %AppData%\DynamoCopilot\DynamoCopilot.Updater.exe (not inside a TFM folder).
+Copy-Item (Join-Path $UpdaterOut "DynamoCopilot.Updater.exe") `
+          (Join-Path $StagingDist "DynamoCopilot.Updater.exe") -Force
+
+Remove-Item $UpdaterOut -Recurse -Force
+
+Write-Host "    Updater.exe placed in staging-dist root." -ForegroundColor Green
 
 # ── Build WPF installer (inner, net8.0-windows) ──────────────────────────────
 

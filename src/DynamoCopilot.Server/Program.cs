@@ -146,12 +146,13 @@ app.MapGet("/health", () => Results.Ok(new
     timestamp = DateTime.UtcNow
 }));
 
-app.MapAuthEndpoints();   // POST /auth/register, /auth/login, /auth/refresh
-app.MapChatEndpoints();   // POST /api/chat/stream  (requires JWT)
-app.MapUserEndpoints();   // GET  /api/me            (requires JWT)
-app.MapAdminEndpoints();  // GET+POST /admin/users/* (requires X-Admin-Key header)
-app.MapNodeEndpoints();   // POST /api/nodes/suggest (requires JWT)
-app.MapRazorPages();      // /Dashboard/* admin UI pages
+app.MapAuthEndpoints();    // POST /auth/register, /auth/login, /auth/refresh
+app.MapChatEndpoints();    // POST /api/chat/stream   (requires JWT)
+app.MapUserEndpoints();    // GET  /api/me             (requires JWT)
+app.MapAdminEndpoints();   // GET+POST /admin/*        (requires X-Admin-Key header)
+app.MapNodeEndpoints();    // POST /api/nodes/suggest  (requires JWT)
+app.MapReleaseEndpoints(); // GET  /api/version/latest (public)
+app.MapRazorPages();       // /Dashboard/* admin UI pages
 
 app.Run();
 

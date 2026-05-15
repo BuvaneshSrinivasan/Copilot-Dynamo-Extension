@@ -532,6 +532,7 @@ data: {"type":"error","message":"..."}   ← on failure
 | LastResetDate | date | Nullable — date the daily counters were last zeroed |
 | RequestLimit | int? | Nullable — per-user override; falls back to `RateLimit:DailyRequestLimit` (default 1000) |
 | TokenLimit | int? | Kept in schema but **not enforced** — token cap was removed (BYOK) |
+| InstalledVersion | string? | Last extension version reported by the client. Set lazily by `GET /api/me` when the extension sends `X-Client-Version` header. Used by the Releases dashboard for version-distribution analytics. |
 | Notes | string? | Admin notes |
 | CreatedAt | datetime | |
 
@@ -649,6 +650,12 @@ X-Admin-Key: your-admin-key
 | Two extensions, one DLL | Single DLL, two `IViewExtension` classes | Dynamo requires one XML manifest per extension; single DLL avoids duplicating shared services |
 | Cross-extension auth sync | Static events on `AuthService` | Both extensions share the same AppDomain; static events are the correct in-process signal — no IPC needed |
 | Panel state tracking | WPF `Loaded`/`Unloaded` events | Correctly detects user closing the panel via Dynamo's own X button, not just our menu item |
+| Auto-update delivery | DLL-only zip in AppData, no new installer | DLLs live in AppData (user-writable); swap requires no UAC; XML manifests in Program Files never change for version bumps |
+| Update apply mechanism | Separate `DynamoCopilot.Updater.exe` (net48) | DLL is locked while Dynamo runs; Updater waits for the Revit process to exit, then copies staged files — no Windows restart needed |
+| Banner sync across panels | `UpdateBannerViewModel.Instance` static singleton | Both panel VMs bind to the same object; Install in one panel updates the other via `INotifyPropertyChanged` with no extra wiring |
+| Version source of truth | `<Version>` in Extension `.csproj` | Both build scripts read from there; bumping the .csproj is the only step before invoking a release skill |
+| nodes.db update | Separate optional "Update DB" button in banner | 186 MB; independent from DLL updates; SQLite file can be overwritten while Dynamo is running (no staging needed) |
+| User version tracking | `X-Client-Version` header on `GET /api/me` | Captured lazily on every panel-open; stored in `User.InstalledVersion`; powers the version-distribution table in the Releases dashboard |
 
 ---
 
@@ -656,19 +663,27 @@ X-Admin-Key: your-admin-key
 
 The installer is a self-contained WPF exe (`installer-wpf/`) that bundles the extension DLLs as an embedded zip payload.
 
+### Version — single source of truth
+
+The `<Version>` tag in `src/DynamoCopilot.Extension/DynamoCopilot.Extension.csproj` is the **only** place you set the version. Both build scripts read it from there automatically — never pass `-Version` manually.
+
+**To release:** bump `<Version>` in the .csproj, then invoke a skill (see Developer Skills below).
+
 ### Build command
 ```powershell
-.\build-installer.ps1 -Version "1.0.3"
+.\build-installer.ps1
+# Reads version from .csproj automatically
 # Output: installer-wpf\Output\DynamoCopilot-Setup.exe
 ```
 
 ### Build pipeline (in order)
 1. `dotnet publish` Extension → `installer-wpf\staging-dist\net48\` and `net8.0-windows\`
-2. `dotnet publish` installer WPF exe → `installer-wpf\Output\`
-3. Copies staging dist → `installer-wpf\Output\dist\`
-4. **Obfuscates** the 3 DLLs in a temp staging copy (`obfuscate.ps1`)
-5. Zips the obfuscated staging copy → `payload.zip`
-6. Appends zip to the exe (`append_payload.ps1`)
+2. `dotnet publish` **DynamoCopilot.Updater** (net48) → placed at `staging-dist\DynamoCopilot.Updater.exe`
+3. `dotnet publish` installer WPF exe → `installer-wpf\Output\`
+4. Copies staging dist → `installer-wpf\Output\dist\`
+5. **Obfuscates** the 3 DLLs in a temp staging copy (`obfuscate.ps1`)
+6. Zips the obfuscated staging copy → `payload.zip`
+7. Appends zip to the exe (`append_payload.ps1`)
 
 ### ViewExtension XML manifests
 
@@ -750,6 +765,124 @@ The JSON wire format is byte-for-byte identical — dictionaries serialize the s
 3. In the VM: set `IsLicenceActive = _authService.GetGrantedExtensions().Contains(ExtensionConstants.NewId)` in `OnAuthSuccess()`
 4. In `RefreshUserInfoAsync()`: `var lic = info.GetLicense(ExtensionConstants.NewId)`
 5. In the XAML: bind content rows to `IsLicenceActive`, add the no-licence banner (same pattern as Copilot/SuggestNodes)
+
+---
+
+## Auto-Update Delivery System
+
+Users receive DLL-only updates silently — no new installer exe, no UAC prompt. The DLLs live in `%AppData%\DynamoCopilot\` (user-writable), so the update applies without elevation.
+
+### End-to-end flow
+
+```
+Developer                        Server / GitHub             User (Dynamo open)
+─────────                        ───────────────             ──────────────────
+Bump <Version> in .csproj
+/publish-update skill →
+  build DLL zip (~5 MB)
+  upload to GitHub releases
+  POST /admin/release        →  AppReleases table updated
+
+                                                             Opens Dynamo
+                                                             Extension calls GET /api/version/latest
+                                                             Sees newer version → shows banner
+                                                             Clicks Install → downloads zip
+                                                             Launches Updater.exe --apply-update <pid>
+                                                             (Updater waits in background)
+                                                             
+                                                             User closes Dynamo / Revit
+                                                             Updater.exe wakes up
+                                                             Copies update\ → live AppData folder
+                                                             Next open: new DLL loads automatically
+```
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `src/DynamoCopilot.Core/Models/ReleaseManifest.cs` | DTO for deserializing `GET /api/version/latest` |
+| `src/DynamoCopilot.Extension/ViewModels/UpdateBannerViewModel.cs` | Static singleton; checks version on startup, downloads DLLs + nodes.db, launches Updater |
+| `installer-wpf/DynamoCopilot.Updater/Program.cs` | net48 helper; waits for Revit PID to exit then copies staged files |
+| `src/DynamoCopilot.Server/Models/AppRelease.cs` | DB entity — one row per published release |
+| `src/DynamoCopilot.Server/Endpoints/ReleaseEndpoints.cs` | `GET /api/version/latest` (public) |
+| `publish-update.ps1` | Developer release script (used by `/publish-update` skill) |
+
+### Server endpoints for releases
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/version/latest | None | Extension polls this on startup |
+| POST | /admin/release | X-Admin-Key | Publish a new release manifest |
+| PATCH | /admin/release/{id}/minVersion | X-Admin-Key | Update the version gate without republishing |
+| PATCH | /admin/release/latest/db | X-Admin-Key | Update nodes.db info on the latest release |
+
+### UpdateBannerViewModel — critical design rules
+
+- **Static singleton** — `UpdateBannerViewModel.Instance` is shared between both panel VMs. Both panels bind to the same object, so Install/Dismiss in one panel instantly updates the other. Do not create new instances.
+- **`StartAsync` is idempotent** — uses `Interlocked.Exchange` so both ViewExtensions can call it; only the first one triggers the version check.
+- **DLL update** — downloads `dlls-vX.Y.Z.zip` to `%AppData%\DynamoCopilot\update\`, launches `DynamoCopilot.Updater.exe --apply-update <pid>`, shows "Restart Dynamo to apply".
+- **nodes.db update** — reads `last_built_at` from the local Metadata SQLite table; if older than `manifest.NodesDb.DbVersion`, shows a secondary "Update DB" button. The DB file is overwritten directly (SQLite is safe to swap while running).
+- **`IsBannerVisible`** is a computed property (`IsDllUpdateVisible || IsDbUpdateVisible`) — do not set it directly.
+- **Version comparison** — uses `System.Version` parsing and `<` operator. The installed version comes from `Assembly.GetExecutingAssembly().GetName().Version`.
+
+### DLL zip structure (inside `dlls-vX.Y.Z.zip`)
+
+```
+net48/                         → copied to %AppData%\DynamoCopilot\net48\
+  DynamoCopilot.Extension.dll
+  DynamoCopilot.Core.dll
+  DynamoCopilot.GraphInterop.dll
+  runtimes/win-*/...
+net8.0-windows/                → copied to %AppData%\DynamoCopilot\net8.0-windows\
+  (same files)
+DynamoCopilot.Updater.exe      → copied to %AppData%\DynamoCopilot\ (root)
+```
+
+### Version tracking (user analytics)
+
+- The extension sends `X-Client-Version: {assembly version}` on every `GET /api/me` call.
+- `UserEndpoints.GetMeAsync` reads this header and updates `User.InstalledVersion` lazily.
+- The admin Releases dashboard (`/Dashboard/Releases`) shows a version-distribution table built from `User.InstalledVersion` groupings.
+
+---
+
+## Developer Skills
+
+Three Claude Code slash commands live in `.claude/commands/`. Invoke them by typing the skill name in the chat.
+
+### `/build-installer [version]`
+
+Bumps the version in `.csproj`, builds `DynamoCopilot-Setup.exe`, and reports the output path. Use this when you have a full new release for new users.
+
+```
+/build-installer          # patch increment: 1.0.3 → 1.0.4
+/build-installer minor    # minor increment: 1.0.3 → 1.1.0
+/build-installer 1.2.0   # exact version
+```
+
+### `/publish-update [version]`
+
+Bumps the version, builds the DLL zip (~5 MB), uploads to GitHub, and calls `POST /admin/release`. Existing users get the banner automatically. **Does not build a new installer exe.**
+
+```
+/publish-update           # patch increment
+/publish-update force     # patch increment + sets minVersion gate (forces all users)
+/publish-update 1.0.5 force   # exact version + force gate
+```
+
+Requires env vars: `DYNAMO_ADMIN_KEY`, `DYNAMO_SERVER_URL`.
+
+### `/update-nodesdb [full|stats]`
+
+Runs the NodeIndexer incrementally (or fully), uploads the new `nodes.db` to GitHub, and calls `PATCH /admin/release/latest/db` to update the manifest. Users see "Update database" in the Suggest Nodes panel.
+
+```
+/update-nodesdb           # incremental update (recommended monthly)
+/update-nodesdb full      # full rebuild from scratch (use after long gap)
+/update-nodesdb stats     # show current DB stats only, no update
+```
+
+Requires env vars: `DYNAMO_ADMIN_KEY`, `DYNAMO_SERVER_URL`.
 
 ---
 

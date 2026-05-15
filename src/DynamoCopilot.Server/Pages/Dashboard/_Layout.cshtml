@@ -144,6 +144,12 @@
                 <i class="bi bi-people-fill"></i> Users
             </a>
         </li>
+        <li>
+            <a class="nav-link @(ViewData["Page"]?.ToString() == "Releases" ? "active" : "")"
+               asp-page="/Dashboard/Releases">
+                <i class="bi bi-cloud-upload-fill"></i> Releases
+            </a>
+        </li>
     </ul>
 
     <div class="sidebar-footer">

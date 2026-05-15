@@ -97,6 +97,8 @@ namespace DynamoCopilot.Extension
                 _authService, localSearch, loadedParams, packageState, downloader, obsoleteStore, Name);
 
             _view = new SuggestNodesPanelView(_viewModel);
+
+            _ = UpdateBannerViewModel.Instance.StartAsync(settings.EffectiveServerUrl);
         }
 
         /// <summary>

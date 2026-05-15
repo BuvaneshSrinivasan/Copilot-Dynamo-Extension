@@ -66,6 +66,10 @@ public class User
     // Per-extension licences — see UserLicense.cs
     public ICollection<UserLicense> Licenses { get; set; } = [];
 
+    // Last extension version reported by the client on any authenticated request.
+    // Updated lazily by the /api/me endpoint via the X-Client-Version header.
+    public string? InstalledVersion { get; set; }
+
     // AUDIT
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -14,11 +14,12 @@ namespace DynamoCopilot.Server.Data;
 
 public class AppDbContext : DbContext
 {
-    public DbSet<User> Users { get; set; } = null!;
+    public DbSet<User>       Users       { get; set; } = null!;
     public DbSet<UserLicense> UserLicenses { get; set; } = null!;
     public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
     public DbSet<DynamoNode> DynamoNodes { get; set; } = null!;
-    public DbSet<UsageLog> UsageLogs { get; set; } = null!;
+    public DbSet<UsageLog>   UsageLogs   { get; set; } = null!;
+    public DbSet<AppRelease> AppReleases { get; set; } = null!;
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -42,6 +43,7 @@ public class AppDbContext : DbContext
             entity.Property(u => u.PasswordHash).HasMaxLength(60).IsRequired();
 
             entity.Property(u => u.Notes).HasMaxLength(1000);
+            entity.Property(u => u.InstalledVersion).HasMaxLength(32);
             entity.Property(u => u.CreatedAt).HasDefaultValueSql("NOW()");
         });
 
@@ -110,6 +112,20 @@ public class AppDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(ul => ul.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── APP RELEASES ──────────────────────────────────────────────────────
+        modelBuilder.Entity<AppRelease>(entity =>
+        {
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(r => r.Version).HasMaxLength(32).IsRequired();
+            entity.Property(r => r.MinVersion).HasMaxLength(32).IsRequired();
+            entity.Property(r => r.ReleaseNotes).HasMaxLength(2000);
+            entity.Property(r => r.DllsUrl).HasMaxLength(1000).IsRequired();
+            entity.Property(r => r.DbUrl).HasMaxLength(1000);
+            entity.Property(r => r.DbVersion).HasMaxLength(32);
+            entity.Property(r => r.PublishedAt).HasDefaultValueSql("NOW()");
         });
 
         // ── REFRESH TOKENS ─────────────────────────────────────────────────────

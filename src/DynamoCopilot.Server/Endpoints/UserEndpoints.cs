@@ -41,6 +41,14 @@ public static class UserEndpoints
         if (user is null)
             return Results.NotFound(new { error = "User not found." });
 
+        // Track which extension version the client is running.
+        var clientVersion = httpContext.Request.Headers["X-Client-Version"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(clientVersion) && clientVersion != user.InstalledVersion)
+        {
+            user.InstalledVersion = clientVersion;
+            await db.SaveChangesAsync(ct);
+        }
+
         var now = DateTime.UtcNow;
 
         return Results.Ok(new

@@ -23,6 +23,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         public AuthFormViewModel AuthForm { get; }
 
+        // Shared singleton — same instance as CopilotPanelViewModel
+        public UpdateBannerViewModel UpdateBanner => UpdateBannerViewModel.Instance;
+
         // ── Auth state ────────────────────────────────────────────────────────
 
         private bool _isLoggedIn;

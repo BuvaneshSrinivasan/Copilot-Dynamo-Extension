@@ -1,0 +1,270 @@
+@page
+@model DynamoCopilot.Server.Pages.Dashboard.ReleasesModel
+@{
+    ViewData["Title"] = "Releases";
+    ViewData["Page"] = "Releases";
+}
+
+@if (Model.SuccessMessage != null)
+{
+    <div class="alert alert-success alert-dismissible fade show mb-4" role="alert">
+        <i class="bi bi-check-circle-fill me-2"></i>@Model.SuccessMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (Model.ErrorMessage != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+        <i class="bi bi-exclamation-circle-fill me-2"></i>@Model.ErrorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<!-- ── Stats ───────────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#dbeafe">
+                <i class="bi bi-tag-fill" style="color:#2563eb"></i>
+            </div>
+            <div>
+                <div class="stat-label">Latest Version</div>
+                <div class="stat-value">@(Model.LatestRelease?.Version ?? "—")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#dcfce7">
+                <i class="bi bi-shield-check" style="color:#16a34a"></i>
+            </div>
+            <div>
+                <div class="stat-label">Minimum Required</div>
+                <div class="stat-value">@(Model.LatestRelease?.MinVersion ?? "—")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-icon" style="background:#fef3c7">
+                <i class="bi bi-people-fill" style="color:#d97706"></i>
+            </div>
+            <div>
+                <div class="stat-label">Users Reporting Version</div>
+                <div class="stat-value">@Model.TotalUsersWithVersion</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+
+    <!-- ── Left column: version distribution + release history ────────────── -->
+    <div class="col-lg-7">
+
+        <!-- Version distribution -->
+        @if (Model.Distribution.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-bar-chart-fill text-primary"></i>
+                    <strong>Version Distribution</strong>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Version</th>
+                                <th>Users</th>
+                                <th style="min-width:140px">Share</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in Model.Distribution)
+                            {
+                                <tr>
+                                    <td><code>@row.Version</code></td>
+                                    <td>@row.UserCount</td>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="progress flex-grow-1" style="height:6px">
+                                                <div class="progress-bar @(row.IsCurrent ? "bg-success" : "bg-warning")"
+                                                     style="width:@row.Pct%"></div>
+                                            </div>
+                                            <small class="text-muted">@row.Pct%</small>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @if (row.IsCurrent)
+                                        {
+                                            <span class="badge bg-success">Current</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-warning text-dark">Outdated</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <!-- Release history -->
+        <div class="card">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-clock-history text-primary"></i>
+                <strong>Release History</strong>
+            </div>
+            @if (!Model.AllReleases.Any())
+            {
+                <div class="card-body text-muted">No releases published yet.</div>
+            }
+            else
+            {
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Version</th>
+                                <th>Min Required</th>
+                                <th>Published</th>
+                                <th>Notes</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var rel in Model.AllReleases)
+                            {
+                                var isLatest = rel.Id == Model.LatestRelease?.Id;
+                                <tr>
+                                    <td>
+                                        <code>@rel.Version</code>
+                                        @if (isLatest) { <span class="badge bg-primary ms-1">Latest</span> }
+                                    </td>
+                                    <td><code class="text-warning">@rel.MinVersion</code></td>
+                                    <td class="text-muted" style="font-size:.82rem">@rel.PublishedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td class="text-muted" style="font-size:.82rem; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis"
+                                        title="@rel.ReleaseNotes">@(string.IsNullOrWhiteSpace(rel.ReleaseNotes) ? "—" : rel.ReleaseNotes)</td>
+                                    <td>
+                                        <button class="btn btn-xs btn-outline-warning py-0 px-2"
+                                                style="font-size:.78rem"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#editMinModal"
+                                                data-id="@rel.Id"
+                                                data-version="@rel.Version"
+                                                data-minversion="@rel.MinVersion">
+                                            Edit gate
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- ── Right column: publish form ─────────────────────────────────────── -->
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-cloud-upload-fill text-primary"></i>
+                <strong>Publish New Release</strong>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Upload the DLL zip to GitHub first, then paste the URL here.<br/>
+                    Or run <code>publish-update.ps1</code> — it does both steps automatically.
+                </p>
+                <form method="post" asp-page-handler="Publish">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Version <span class="text-danger">*</span></label>
+                        <input name="NewVersion" class="form-control form-control-sm" placeholder="1.0.4" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">DLLs URL <span class="text-danger">*</span></label>
+                        <input name="NewDllsUrl" type="url" class="form-control form-control-sm"
+                               placeholder="https://github.com/.../releases/download/v1.0.0/dlls-v1.0.4.zip" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">DLLs Size (bytes) <span class="text-danger">*</span></label>
+                        <input name="NewDllsSizeBytes" type="number" class="form-control form-control-sm" placeholder="5242880" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Min Required Version</label>
+                        <input name="NewMinVersion" class="form-control form-control-sm" placeholder="1.0.0 (leave blank = no gate)" />
+                        <div class="form-text">Users below this version will see a hard blocker.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Release Notes</label>
+                        <textarea name="NewReleaseNotes" class="form-control form-control-sm" rows="2"
+                                  placeholder="Fixed node insertion bug, improved search ranking"></textarea>
+                    </div>
+
+                    <hr class="my-3" />
+                    <p class="text-muted small mb-2"><i class="bi bi-database"></i> nodes.db update (optional)</p>
+
+                    <div class="mb-3">
+                        <label class="form-label">DB Version (date)</label>
+                        <input name="NewDbVersion" class="form-control form-control-sm" placeholder="2026-06-01" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">DB URL</label>
+                        <input name="NewDbUrl" type="url" class="form-control form-control-sm"
+                               placeholder="https://github.com/.../releases/download/v1.0.0/nodes.db" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">DB Size (bytes)</label>
+                        <input name="NewDbSizeBytes" type="number" class="form-control form-control-sm" placeholder="195035136" />
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-cloud-upload me-1"></i> Publish Release
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Edit minVersion modal ───────────────────────────────────────────────── -->
+<div class="modal fade" id="editMinModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title">Edit Version Gate</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" asp-page-handler="SetMinVersion">
+                <div class="modal-body">
+                    <input type="hidden" name="EditReleaseId" id="editReleaseId" />
+                    <p class="text-muted small mb-3">
+                        Updating <strong id="editVersionLabel"></strong>.<br/>
+                        Users below the minimum required version see a hard blocker.
+                    </p>
+                    <label class="form-label fw-semibold">Min Required Version</label>
+                    <input name="EditMinVersion" id="editMinVersion" class="form-control" placeholder="1.0.0" required />
+                    <div class="form-text">Set equal to this version to force all users to update.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning btn-sm">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('editMinModal').addEventListener('show.bs.modal', function (e) {
+    var btn = e.relatedTarget;
+    document.getElementById('editReleaseId').value  = btn.dataset.id;
+    document.getElementById('editVersionLabel').textContent = 'v' + btn.dataset.version;
+    document.getElementById('editMinVersion').value = btn.dataset.minversion;
+});
+</script>

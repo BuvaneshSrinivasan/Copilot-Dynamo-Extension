@@ -91,6 +91,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
         public AuthFormViewModel AuthForm { get; }
 
+        // Shared singleton — same instance is used by SuggestNodesPanelViewModel
+        public UpdateBannerViewModel UpdateBanner => UpdateBannerViewModel.Instance;
+
         private ChatSession _currentSession;
         private CancellationTokenSource? _streamingCts;
 

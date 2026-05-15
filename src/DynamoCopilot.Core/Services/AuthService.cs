@@ -288,6 +288,9 @@ namespace DynamoCopilot.Core.Services
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, _serverUrl + "/api/me");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+                if (!string.IsNullOrEmpty(version))
+                    request.Headers.TryAddWithoutValidation("X-Client-Version", version);
 
                 using var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode)

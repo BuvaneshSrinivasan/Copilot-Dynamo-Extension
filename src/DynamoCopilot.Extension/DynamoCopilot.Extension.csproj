@@ -8,6 +8,10 @@
     <LangVersion>10</LangVersion>
     <RootNamespace>DynamoCopilot.Extension</RootNamespace>
     <AssemblyName>DynamoCopilot.Extension</AssemblyName>
+    <!-- Bump this when shipping a new release. Both build scripts read it automatically. -->
+    <Version>1.0.3</Version>
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

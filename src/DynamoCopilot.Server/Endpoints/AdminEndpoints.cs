@@ -54,6 +54,9 @@ public static class AdminEndpoints
         group.MapPost("/users/{id:guid}/reset-usage", ResetUsageAsync);
         group.MapPatch("/users/{id:guid}/limits", SetLimitsAsync);
         group.MapDelete("/users", DeleteUserAsync);
+        group.MapPost("/release", PublishReleaseAsync);
+        group.MapPatch("/release/{id:guid}/minVersion", UpdateMinVersionAsync);
+        group.MapPatch("/release/latest/db", UpdateLatestDbAsync);
     }
 
     // ── GET /admin/users ──────────────────────────────────────────────────────
@@ -350,6 +353,107 @@ public static class AdminEndpoints
         return Results.Ok(new { message = $"{user.Email} permanently deleted." });
     }
 
+    // ── POST /admin/release ───────────────────────────────────────────────────
+    // Publishes a new release manifest. The extension checks GET /api/version/latest
+    // on startup and downloads the DLL zip when a newer version is found.
+    //
+    // Request body:
+    //   { "version": "1.0.4", "dllsUrl": "https://...", "dllsSizeBytes": 5242880,
+    //     "minVersion": "1.0.0",  "releaseNotes": "Fixed X",
+    //     "dbVersion": "2026-05-15", "dbUrl": "https://...", "dbSizeBytes": 195035136 }
+    //
+    // Only version, dllsUrl, and dllsSizeBytes are required.
+    // Set minVersion higher than the current release to force users below that version
+    // to update before they can use the extension again.
+
+    private static async Task<IResult> PublishReleaseAsync(
+        PublishReleaseRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Version))
+            return Results.BadRequest(new { error = "version is required." });
+
+        if (string.IsNullOrWhiteSpace(request.DllsUrl))
+            return Results.BadRequest(new { error = "dllsUrl is required." });
+
+        if (request.DllsSizeBytes <= 0)
+            return Results.BadRequest(new { error = "dllsSizeBytes must be a positive integer." });
+
+        var release = new AppRelease
+        {
+            Version       = request.Version.Trim(),
+            MinVersion    = request.MinVersion?.Trim() ?? "1.0.0",
+            ReleaseNotes  = request.ReleaseNotes?.Trim() ?? "",
+            DllsUrl       = request.DllsUrl.Trim(),
+            DllsSizeBytes = request.DllsSizeBytes,
+            DbVersion     = request.DbVersion?.Trim(),
+            DbUrl         = request.DbUrl?.Trim(),
+            DbSizeBytes   = request.DbSizeBytes,
+            PublishedAt   = DateTime.UtcNow
+        };
+
+        db.AppReleases.Add(release);
+        await db.SaveChangesAsync(ct);
+
+        return Results.Json(new
+        {
+            ok          = true,
+            version     = release.Version,
+            minVersion  = release.MinVersion,
+            publishedAt = release.PublishedAt
+        });
+    }
+
+    // ── PATCH /admin/release/latest/db ───────────────────────────────────────
+    // Updates only the nodes.db fields on the most recently published release.
+    // Used by the /update-nodesdb skill after uploading a fresh nodes.db to GitHub.
+
+    private static async Task<IResult> UpdateLatestDbAsync(
+        UpdateDbRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var latest = await db.AppReleases
+            .OrderByDescending(r => r.PublishedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (latest is null)
+            return Results.NotFound(new { error = "No releases found. Publish a release first." });
+
+        latest.DbVersion   = request.DbVersion.Trim();
+        latest.DbUrl       = request.DbUrl.Trim();
+        latest.DbSizeBytes = request.DbSizeBytes;
+        await db.SaveChangesAsync(ct);
+
+        return Results.Json(new { ok = true, version = latest.Version, dbVersion = latest.DbVersion });
+    }
+
+    // ── PATCH /admin/release/{id}/minVersion ──────────────────────────────────
+    // Updates the minVersion gate on an existing release without republishing it.
+    // Useful when you need to force users to update after the fact.
+
+    private static async Task<IResult> UpdateMinVersionAsync(
+        Guid id,
+        UpdateMinVersionRequest request,
+        AppDbContext db,
+        CancellationToken ct)
+    {
+        var release = await db.AppReleases.FindAsync(new object[] { id }, ct);
+        if (release is null)
+            return Results.NotFound(new { error = "Release not found." });
+
+        release.MinVersion = request.MinVersion.Trim();
+        await db.SaveChangesAsync(ct);
+
+        return Results.Json(new
+        {
+            ok         = true,
+            version    = release.Version,
+            minVersion = release.MinVersion
+        });
+    }
+
     private static DateTime AddDuration(DateTime date, int amount, string unit) => unit switch
     {
         "days"  => date.AddDays(amount),
@@ -363,3 +467,14 @@ public record DeleteUserRequest(string Email);
 public record GrantLicenseRequest(string Email, string Extension, int Amount, string? Unit = "months");
 public record RevokeLicenseRequest(string Email, string Extension);
 public record SetLimitsRequest(int? RequestLimit, int? TokenLimit, string? Notes);
+public record UpdateMinVersionRequest(string MinVersion);
+public record UpdateDbRequest(string DbVersion, string DbUrl, long DbSizeBytes);
+public record PublishReleaseRequest(
+    string  Version,
+    string  DllsUrl,
+    long    DllsSizeBytes,
+    string? MinVersion   = null,
+    string? ReleaseNotes = null,
+    string? DbVersion    = null,
+    string? DbUrl        = null,
+    long?   DbSizeBytes  = null);

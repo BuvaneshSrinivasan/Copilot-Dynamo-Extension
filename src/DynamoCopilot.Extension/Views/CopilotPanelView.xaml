@@ -787,11 +787,76 @@
     <!--  ROOT — switches between Login panel and Chat panel                -->
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Row 0: Update banner -->
+            <RowDefinition Height="*"/>     <!-- Row 1: Main content -->
+        </Grid.RowDefinitions>
+
+        <!-- ── Update Banner ─────────────────────────────────────────────── -->
+        <Border Grid.Row="0"
+                Visibility="{Binding UpdateBanner.IsBannerVisible, Converter={StaticResource BoolToVis}}"
+                Background="#1A2A1A"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                Padding="10,7">
+            <StackPanel>
+
+                <!-- DLL update row -->
+                <Grid Visibility="{Binding UpdateBanner.IsDllUpdateVisible, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding UpdateBanner.DllStatusMessage}"
+                               Foreground="#6EC6F5" FontSize="11"
+                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0"
+                                Visibility="{Binding UpdateBanner.ShowInstallButtons, Converter={StaticResource BoolToVis}}">
+                        <Button Content="Install"
+                                Command="{Binding UpdateBanner.InstallUpdateCommand}"
+                                Padding="8,2" Margin="0,0,4,0"
+                                Background="#1E4A7A" BorderBrush="#6EC6F5" BorderThickness="1"
+                                Foreground="#6EC6F5" FontSize="11" Cursor="Hand"/>
+                        <Button Content="✕"
+                                Command="{Binding UpdateBanner.DismissCommand}"
+                                Padding="4,2" Background="Transparent" BorderThickness="0"
+                                Foreground="{StaticResource MutedBrush}" FontSize="11"
+                                Visibility="{Binding UpdateBanner.IsDismissible, Converter={StaticResource BoolToVis}}"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- nodes.db update row (separate optional download) -->
+                <Grid Margin="0,4,0,0"
+                      Visibility="{Binding UpdateBanner.IsDbUpdateVisible, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding UpdateBanner.DbStatusMessage}"
+                               Foreground="#8B8B8B" FontSize="11"
+                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Button Grid.Column="1"
+                            Content="Update DB"
+                            Command="{Binding UpdateBanner.UpdateDatabaseCommand}"
+                            Visibility="{Binding UpdateBanner.ShowDbUpdateButton, Converter={StaticResource BoolToVis}}"
+                            Padding="6,2" Margin="8,0,0,0"
+                            Background="Transparent" BorderBrush="#3A3A3A" BorderThickness="1"
+                            Foreground="{StaticResource MutedBrush}" FontSize="11" Cursor="Hand"/>
+                </Grid>
+
+                <!-- Combined progress bar -->
+                <ProgressBar Margin="0,5,0,0" Height="3"
+                             Value="{Binding UpdateBanner.AnyProgress}" Maximum="100"
+                             Background="#2D2D2D" Foreground="#6EC6F5"
+                             Visibility="{Binding UpdateBanner.ShowProgressBar, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </Border>
 
         <!-- ══════════════════════════════════════════════════════════════ -->
         <!--  NOT LOGGED IN — auth form                                      -->
         <!-- ══════════════════════════════════════════════════════════════ -->
-        <Grid Visibility="{Binding IsLoggedIn, Converter={StaticResource InvBoolToVis}}">
+        <Grid Grid.Row="1" Visibility="{Binding IsLoggedIn, Converter={StaticResource InvBoolToVis}}">
             <views:AuthFormView DataContext="{Binding AuthForm}"
                                 HorizontalAlignment="Stretch"
                                 VerticalAlignment="Center"/>
@@ -801,7 +866,7 @@
         <!--  CHAT PANEL                                                     -->
         <!--  Visible when IsLoggedIn = true                                 -->
         <!-- ══════════════════════════════════════════════════════════════ -->
-        <Grid Visibility="{Binding IsLoggedIn, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="1" Visibility="{Binding IsLoggedIn, Converter={StaticResource BoolToVis}}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>   <!-- Row 0: Header -->
                 <RowDefinition Height="Auto"/>   <!-- Row 1: User info / AI settings -->
