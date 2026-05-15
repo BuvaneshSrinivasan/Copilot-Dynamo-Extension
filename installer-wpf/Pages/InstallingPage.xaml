@@ -63,10 +63,12 @@
                        Margin="0,0,0,28"/>
 
             <!-- Hint -->
-            <TextBlock Text="Please wait — this will only take a moment."
+            <TextBlock Text="Downloading the node database and AI model (~280 MB). This is a one-time download."
                        Foreground="#2A3255"
                        FontFamily="Segoe UI"
                        FontSize="12"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
                        HorizontalAlignment="Center"/>
         </StackPanel>
     </Grid>

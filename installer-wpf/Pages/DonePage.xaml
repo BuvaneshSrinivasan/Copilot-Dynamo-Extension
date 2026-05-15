@@ -100,7 +100,7 @@
                 </TextBlock.Effect>
             </TextBlock>
 
-            <!-- ── "Happy Vibe Coding!" ── -->
+            <!-- ── Subtitle ── -->
             <TextBlock Text="Happy Vibe Coding! ✨"
                        Foreground="#20D68A"
                        FontFamily="Segoe UI"
@@ -115,7 +115,7 @@
             </TextBlock>
 
             <!-- ── Instruction ── -->
-            <TextBlock Text="Restart Dynamo to start using DynamoCopilot."
+            <TextBlock Text="Open Revit, launch Dynamo, and look for the BimEra menu."
                        Foreground="#374260"
                        FontFamily="Segoe UI"
                        FontSize="12"

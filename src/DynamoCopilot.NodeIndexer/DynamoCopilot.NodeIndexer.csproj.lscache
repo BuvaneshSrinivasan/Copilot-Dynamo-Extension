@@ -12,150 +12,20 @@ language=C#
 primary
 lastDtbSucceeded
 
-[sliceDimensions]
-TargetFramework=net48
-
 [properties]
-AssemblyName=DynamoCopilot.GraphInterop
-CommandLineArgsForDesignTimeEvaluation=-langversion:10 -define:TRACE
-CompilerGeneratedFilesOutputPath=
-MaxSupportedLangVersion=7.3
-ProjectAssetsFile=<PATH>obj/project.assets.json
-RootNamespace=DynamoCopilot.GraphInterop
-RunAnalyzers=
-RunAnalyzersDuringLiveAnalysis=
-SolutionPath=<PATH>../../Copilot-Dynamo-Extension.sln
-TargetFrameworkIdentifier=.NETFramework
-TargetPath=<PATH>bin/Debug/net48/DynamoCopilot.GraphInterop.dll
-TargetRefPath=
-TemporaryDependencyNodeTargetIdentifier=net48
-
-[commandLineArguments]
-/noconfig
-/unsafe-
-/checked-
-/nowarn:1701,1702,1701,1702
-/fullpaths
-/nostdlib+
-/errorreport:prompt
-/warn:4
-/define:TRACE;DEBUG;NETFRAMEWORK;NET48;NET20_OR_GREATER;NET30_OR_GREATER;NET35_OR_GREATER;NET40_OR_GREATER;NET45_OR_GREATER;NET451_OR_GREATER;NET452_OR_GREATER;NET46_OR_GREATER;NET461_OR_GREATER;NET462_OR_GREATER;NET47_OR_GREATER;NET471_OR_GREATER;NET472_OR_GREATER;NET48_OR_GREATER
-/highentropyva+
-/nullable:enable
-/debug+
-/debug:portable
-/filealign:512
-/optimize-
-/out:obj\Debug\net48\DynamoCopilot.GraphInterop.dll
-/subsystemversion:6.00
-/target:library
-/warnaserror-
-/utf8output
-/deterministic+
-/langversion:10
-/warnaserror+:NU1605
-
-[sourceFiles]
-GraphChangeCommands.cs
-GraphNodeInserter.cs
-GraphNodeReader.cs
-obj/Debug/net48/
- .NETFramework,Version=v4.8.AssemblyAttributes.cs
- DynamoCopilot.GraphInterop.AssemblyInfo.cs
-PythonNodeInterop.cs
-
-[metadataReferences]
-../DynamoCopilot.Core/bin/Debug/net48/DynamoCopilot.Core.dll
-<NETFXREF>/v4.8/
- Facades/netstandard.dll
- mscorlib.dll
- PresentationCore.dll
- PresentationFramework.dll
- System.Core.dll
- System.Data.dll
- System.dll
- System.Drawing.dll
- System.IO.Compression.FileSystem.dll
- System.Numerics.dll
- System.Runtime.Serialization.dll
- System.Xaml.dll
- System.Xml.dll
- System.Xml.Linq.dll
- WindowsBase.dll
-<NUGET>/
- commonservicelocator/1.0.0/lib/NET35/Microsoft.Practices.ServiceLocation.dll
- dynamovisualprogramming.core/2.19.4.6625/lib/net48/
-  DesignScriptBuiltin.dll
-  DSCPython.dll
-  DynamoApplications.dll
-  DynamoCore.dll
-  DynamoInstallDetective.dll
-  DynamoPackages.dll
-  DynamoShapeManager.dll
-  DynamoUtilities.dll
-  ProtoCore.dll
-  VMDataBridge.dll
- dynamovisualprogramming.dynamocorenodes/2.19.4.6625/lib/net48/
-  Analysis.dll
-  CoreNodeModels.dll
-  DSCoreNodes.dll
-  GeometryColor.dll
-  UnitsNodeModels.dll
-  Watch3DNodeModels.dll
- dynamovisualprogramming.dynamoservices/2.19.4.6625/lib/netstandard2.0/DynamoServices.dll
- dynamovisualprogramming.wpfuilibrary/2.19.4.6625/lib/net48/
-  CoreNodeModelsWpf.dll
-  DynamoCoreWpf.dll
- dynamovisualprogramming.zerotouchlibrary/2.19.4.6625/lib/net48/
-  DynamoUnits.dll
-  ProtoGeometry.dll
- microsoft.bcl.asyncinterfaces/8.0.0/lib/net462/Microsoft.Bcl.AsyncInterfaces.dll
- newtonsoft.json/13.0.1/lib/net45/Newtonsoft.Json.dll
- nunit/2.6.3/lib/nunit.framework.dll
- prism/4.1.0/lib/NET40/
-  Microsoft.Expression.Interactions.dll
-  Microsoft.Practices.Prism.dll
-  Microsoft.Practices.Prism.Interactivity.dll
-  System.Windows.Interactivity.dll
- system.buffers/4.5.1/ref/net45/System.Buffers.dll
- system.collections.immutable/1.7.1/lib/net461/System.Collections.Immutable.dll
- system.memory/4.5.5/lib/net461/System.Memory.dll
- system.numerics.vectors/4.5.0/ref/net46/System.Numerics.Vectors.dll
- system.runtime.compilerservices.unsafe/6.0.0/lib/net461/System.Runtime.CompilerServices.Unsafe.dll
- system.text.encodings.web/8.0.0/lib/net462/System.Text.Encodings.Web.dll
- system.text.json/8.0.5/lib/net462/System.Text.Json.dll
- system.threading.tasks.extensions/4.5.4/lib/net461/System.Threading.Tasks.Extensions.dll
- system.valuetuple/4.5.0/ref/net47/System.ValueTuple.dll
-
-[analyzerReferences]
-<NUGET>/system.text.json/8.0.5/analyzers/dotnet/roslyn4.4/cs/System.Text.Json.SourceGeneration.dll
-
-[analyzerConfigFiles]
-obj/Debug/net48/DynamoCopilot.GraphInterop.GeneratedMSBuildEditorConfig.editorconfig
-
----
-
-[project]
-language=C#
-lastDtbSucceeded
-
-[sliceDimensions]
-TargetFramework=net8.0-windows
-
-[properties]
-AssemblyName=DynamoCopilot.GraphInterop
-CommandLineArgsForDesignTimeEvaluation=-langversion:10 -define:TRACE
+AssemblyName=DynamoCopilot.NodeIndexer
+CommandLineArgsForDesignTimeEvaluation=-langversion:12.0 -define:TRACE
 CompilerGeneratedFilesOutputPath=
 MaxSupportedLangVersion=12.0
 ProjectAssetsFile=<PATH>obj/project.assets.json
-RootNamespace=DynamoCopilot.GraphInterop
+RootNamespace=DynamoCopilot.NodeIndexer
 RunAnalyzers=
 RunAnalyzersDuringLiveAnalysis=
 SolutionPath=<PATH>../../Copilot-Dynamo-Extension.sln
 TargetFrameworkIdentifier=.NETCoreApp
-TargetPath=<PATH>bin/Debug/net8.0-windows/DynamoCopilot.GraphInterop.dll
-TargetRefPath=<PATH>obj/Debug/net8.0-windows/ref/DynamoCopilot.GraphInterop.dll
-TemporaryDependencyNodeTargetIdentifier=net8.0-windows
+TargetPath=<PATH>bin/Debug/net8.0/DynamoCopilot.NodeIndexer.dll
+TargetRefPath=<PATH>obj/Debug/net8.0/ref/DynamoCopilot.NodeIndexer.dll
+TemporaryDependencyNodeTargetIdentifier=net8.0
 
 [commandLineArguments]
 /noconfig
@@ -166,59 +36,48 @@ TemporaryDependencyNodeTargetIdentifier=net8.0-windows
 /nostdlib+
 /errorreport:prompt
 /warn:8
-/define:TRACE;DEBUG;NET;NET8_0;NETCOREAPP;WINDOWS;WINDOWS7_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;WINDOWS7_0_OR_GREATER
+/define:TRACE;DEBUG;NET;NET8_0;NETCOREAPP;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER
 /highentropyva+
 /nullable:enable
 /debug+
 /debug:portable
 /filealign:512
 /optimize-
-/out:obj\Debug\net8.0-windows\DynamoCopilot.GraphInterop.dll
-/refout:obj\Debug\net8.0-windows\refint\DynamoCopilot.GraphInterop.dll
-/target:library
+/out:obj\Debug\net8.0\DynamoCopilot.NodeIndexer.dll
+/refout:obj\Debug\net8.0\refint\DynamoCopilot.NodeIndexer.dll
+/target:exe
 /warnaserror-
 /utf8output
 /deterministic+
-/langversion:10
+/langversion:12.0
 /warnaserror+:NU1605,SYSLIB0011
 
 [sourceFiles]
-GraphChangeCommands.cs
-GraphNodeInserter.cs
-GraphNodeReader.cs
-obj/Debug/net8.0-windows/
+Database/
+ NodeRepository.cs
+ SqliteExporter.cs
+Embeddings/
+ GeminiEmbedder.cs
+ OllamaEmbedder.cs
+ OnnxEmbedder.cs
+Extractors/
+ DyfParser.cs
+ PackageExtractor.cs
+ XmlDocParser.cs
+Models/NodeRecord.cs
+obj/Debug/net8.0/
  .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
- DynamoCopilot.GraphInterop.AssemblyInfo.cs
-PythonNodeInterop.cs
+ DynamoCopilot.NodeIndexer.AssemblyInfo.cs
+ DynamoCopilot.NodeIndexer.GlobalUsings.g.cs
+PackageManagerClient.cs
+Program.cs
 
 [metadataReferences]
-../DynamoCopilot.Core/obj/Debug/net8.0-windows/ref/DynamoCopilot.Core.dll
-<NUGET>/dynamovisualprogramming.core/2.19.4.6625/lib/net48/
- DesignScriptBuiltin.dll
- DSCPython.dll
- DynamoApplications.dll
- DynamoCore.dll
- DynamoInstallDetective.dll
- DynamoPackages.dll
- DynamoShapeManager.dll
- DynamoUtilities.dll
- ProtoCore.dll
- VMDataBridge.dll
-<NUGET>/dynamovisualprogramming.dynamocorenodes/2.19.4.6625/lib/net48/
- Analysis.dll
- CoreNodeModels.dll
- DSCoreNodes.dll
- GeometryColor.dll
- UnitsNodeModels.dll
- Watch3DNodeModels.dll
 <NUGET>/
- dynamovisualprogramming.dynamoservices/2.19.4.6625/lib/netstandard2.0/DynamoServices.dll
- dynamovisualprogramming.wpfuilibrary/2.19.4.6625/lib/net48/
-  CoreNodeModelsWpf.dll
-  DynamoCoreWpf.dll
- dynamovisualprogramming.zerotouchlibrary/2.19.4.6625/lib/net48/
-  DynamoUnits.dll
-  ProtoGeometry.dll
+ microsoft.data.sqlite.core/8.0.13/lib/net8.0/Microsoft.Data.Sqlite.dll
+ microsoft.extensions.dependencyinjection.abstractions/8.0.0/lib/net8.0/Microsoft.Extensions.DependencyInjection.Abstractions.dll
+ microsoft.extensions.logging.abstractions/8.0.0/lib/net8.0/Microsoft.Extensions.Logging.Abstractions.dll
+ microsoft.ml.onnxruntime.managed/1.20.1/lib/net8.0/Microsoft.ML.OnnxRuntime.dll
  microsoft.netcore.app.ref/8.0.25/ref/net8.0/
   Microsoft.CSharp.dll
   Microsoft.VisualBasic.Core.dll
@@ -383,22 +242,27 @@ PythonNodeInterop.cs
   System.Xml.XPath.dll
   System.Xml.XPath.XDocument.dll
   WindowsBase.dll
- newtonsoft.json/13.0.1/lib/netstandard2.0/Newtonsoft.Json.dll
- nunit/3.13.3/lib/netstandard2.0/nunit.framework.dll
- system.security.cryptography.protecteddata/8.0.0/lib/net8.0/System.Security.Cryptography.ProtectedData.dll
+ npgsql/8.0.9/lib/net8.0/Npgsql.dll
+ pgvector/0.3.2/lib/net6.0/Pgvector.dll
+ sqlitepclraw.bundle_e_sqlite3/2.1.6/lib/netstandard2.0/SQLitePCLRaw.batteries_v2.dll
+ sqlitepclraw.core/2.1.6/lib/netstandard2.0/SQLitePCLRaw.core.dll
+ sqlitepclraw.provider.e_sqlite3/2.1.6/lib/net6.0/SQLitePCLRaw.provider.e_sqlite3.dll
+ system.reflection.metadataloadcontext/8.0.0/lib/net8.0/System.Reflection.MetadataLoadContext.dll
 
 [analyzerReferences]
 <DOTNET>/sdk/10.0.300-preview.0.26177.108/Sdks/Microsoft.NET.Sdk/analyzers/
  Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
  Microsoft.CodeAnalysis.NetAnalyzers.dll
-<NUGET>/microsoft.netcore.app.ref/8.0.25/analyzers/dotnet/cs/
- Microsoft.Interop.ComInterfaceGenerator.dll
- Microsoft.Interop.JavaScript.JSImportGenerator.dll
- Microsoft.Interop.LibraryImportGenerator.dll
- Microsoft.Interop.SourceGeneration.dll
- System.Text.Json.SourceGeneration.dll
- System.Text.RegularExpressions.Generator.dll
+<NUGET>/
+ microsoft.extensions.logging.abstractions/8.0.0/analyzers/dotnet/roslyn4.4/cs/Microsoft.Extensions.Logging.Generators.dll
+ microsoft.netcore.app.ref/8.0.25/analyzers/dotnet/cs/
+  Microsoft.Interop.ComInterfaceGenerator.dll
+  Microsoft.Interop.JavaScript.JSImportGenerator.dll
+  Microsoft.Interop.LibraryImportGenerator.dll
+  Microsoft.Interop.SourceGeneration.dll
+  System.Text.Json.SourceGeneration.dll
+  System.Text.RegularExpressions.Generator.dll
 
 [analyzerConfigFiles]
 <DOTNET>/sdk/10.0.300-preview.0.26177.108/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
-obj/Debug/net8.0-windows/DynamoCopilot.GraphInterop.GeneratedMSBuildEditorConfig.editorconfig
+obj/Debug/net8.0/DynamoCopilot.NodeIndexer.GeneratedMSBuildEditorConfig.editorconfig

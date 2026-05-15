@@ -13,10 +13,13 @@ Interpret the argument as follows:
 
 ## Steps
 
-**Step 1 — Check prerequisites**
-Check that the following environment variables are set. If any are missing, ask the user for the values before continuing — do NOT proceed with empty values:
-- `DYNAMO_ADMIN_KEY` — the Admin:ApiKey value from the server config
-- `DYNAMO_SERVER_URL` — the Railway server URL (e.g. https://your-app.railway.app)
+**Step 1 — Resolve the server URL and admin key**
+
+For the server URL, use this priority order:
+1. `$env:DYNAMO_SERVER_URL` if set
+2. Otherwise, grep `src/DynamoCopilot.Core/Settings/DynamoCopilotSettings.cs` for the first `https://` string literal — that's the production Railway URL (same URL the extension itself uses)
+
+For the admin key, check `$env:DYNAMO_ADMIN_KEY`. If not set, ask the user for it — do NOT proceed without it.
 
 **Step 2 — Read the current version**
 Read `src/DynamoCopilot.Extension/DynamoCopilot.Extension.csproj` and find the `<Version>` tag value.

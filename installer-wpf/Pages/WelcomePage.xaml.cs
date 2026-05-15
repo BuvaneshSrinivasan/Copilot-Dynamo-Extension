@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -13,15 +12,18 @@ public partial class WelcomePage : UserControl
         InitializeComponent();
         _main = main;
 
-        // Version and company come from the csproj <Version> and <Company> properties
-        var asm     = Assembly.GetExecutingAssembly();
-        var ver     = asm.GetName().Version;
-        var company = System.Diagnostics.FileVersionInfo
-                           .GetVersionInfo(Environment.ProcessPath ?? string.Empty).CompanyName;
+        // Read from WIN32 file-version resource (set via <FileVersion> in the .csproj).
+        // This survives GenerateAssemblyInfo=false which is required to avoid duplicate
+        // managed attributes when building with RuntimeIdentifier + PublishSingleFile.
+        var fvi = System.Diagnostics.FileVersionInfo
+                       .GetVersionInfo(Environment.ProcessPath ?? string.Empty);
 
-        if (ver is not null)
-            VersionText.Text = $"v{ver.Major}.{ver.Minor}.{ver.Build}"
-                             + (string.IsNullOrWhiteSpace(company) ? "" : $" · {company}");
+        var ver     = fvi.FileVersion ?? "0.0.0";
+        var parts   = ver.Split('.');
+        var display = parts.Length >= 3 ? $"{parts[0]}.{parts[1]}.{parts[2]}" : ver;
+        var company = fvi.CompanyName ?? "";
+
+        VersionText.Text = $"v{display}" + (string.IsNullOrWhiteSpace(company) ? "" : $" · {company}");
     }
 
     private void InstallBtn_Click(object sender, RoutedEventArgs e)

@@ -182,8 +182,15 @@ namespace DynamoCopilot.Extension.ViewModels
                 {
                     http.DefaultRequestHeaders.Add("User-Agent", "DynamoCopilot-Extension");
 
-                    var json = await http.GetStringAsync(
+                    using var response = await http.GetAsync(
                         serverUrl.TrimEnd('/') + "/api/version/latest").ConfigureAwait(false);
+
+                    // 404 = no release published yet → nothing to show, not an error
+                    if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return;
+
+                    response.EnsureSuccessStatusCode();
+
+                    var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                     var manifest = JsonSerializer.Deserialize<ReleaseManifest>(json);
                     if (manifest == null || string.IsNullOrWhiteSpace(manifest.Version)) return;

@@ -847,7 +847,7 @@
 
                 <!-- Combined progress bar -->
                 <ProgressBar Margin="0,5,0,0" Height="3"
-                             Value="{Binding UpdateBanner.AnyProgress}" Maximum="100"
+                             Value="{Binding UpdateBanner.AnyProgress, Mode=OneWay}" Maximum="100"
                              Background="#2D2D2D" Foreground="#6EC6F5"
                              Visibility="{Binding UpdateBanner.ShowProgressBar, Converter={StaticResource BoolToVis}}"/>
             </StackPanel>

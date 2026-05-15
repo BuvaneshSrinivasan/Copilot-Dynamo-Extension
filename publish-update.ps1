@@ -27,7 +27,8 @@
     Your Admin:ApiKey value. Reads from env var DYNAMO_ADMIN_KEY if not supplied.
 
 .PARAMETER ServerUrl
-    Your Railway server URL. Reads from env var DYNAMO_SERVER_URL if not supplied.
+    Your Railway server URL. If not supplied, reads from DynamoCopilotSettings.cs
+    (the same URL the extension itself uses — single source of truth).
 
 .PARAMETER GitHubRepo
     GitHub repo in "owner/name" format. Default: BuvaneshSrinivasan/Copilot-Dynamo-Extension.
@@ -64,7 +65,7 @@ param(
     [string]$Notes        = "",
     [string]$MinVersion   = "1.0.0",
     [string]$AdminKey     = $env:DYNAMO_ADMIN_KEY,
-    [string]$ServerUrl    = $env:DYNAMO_SERVER_URL,
+    [string]$ServerUrl    = "",   # Leave blank to read from DynamoCopilotSettings.cs
     [string]$GitHubRepo   = "BuvaneshSrinivasan/Copilot-Dynamo-Extension",
     [string]$GitHubTag    = "v1.0.0",
     [string]$DbVersion    = "",
@@ -82,6 +83,23 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = ($xml.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ }) | Select-Object -First 1
     if ([string]::IsNullOrWhiteSpace($Version)) { throw "No <Version> tag found in $csprojPath" }
     Write-Host "Version from .csproj: $Version" -ForegroundColor DarkGray
+}
+
+# ── Resolve server URL from DynamoCopilotSettings.cs if not supplied ──────────
+if ([string]::IsNullOrWhiteSpace($ServerUrl)) {
+    # Try env var first, then fall back to the hardcoded default in Settings.cs
+    if (-not [string]::IsNullOrWhiteSpace($env:DYNAMO_SERVER_URL)) {
+        $ServerUrl = $env:DYNAMO_SERVER_URL
+    } else {
+        $settingsPath = Join-Path $PSScriptRoot "src\DynamoCopilot.Core\Settings\DynamoCopilotSettings.cs"
+        $match = Select-String -Path $settingsPath -Pattern '"(https://[^"]+)"' | Select-Object -First 1
+        if ($match) {
+            $ServerUrl = $match.Matches[0].Groups[1].Value
+            Write-Host "Server URL from DynamoCopilotSettings.cs: $ServerUrl" -ForegroundColor DarkGray
+        } else {
+            throw "Could not resolve ServerUrl. Pass -ServerUrl or set DYNAMO_SERVER_URL env var."
+        }
+    }
 }
 
 # ── Validate inputs ────────────────────────────────────────────────────────────

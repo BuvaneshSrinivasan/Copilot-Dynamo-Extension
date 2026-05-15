@@ -13,63 +13,54 @@ public class ReleasesModel : DashboardPageModel
 
     // ── View data ─────────────────────────────────────────────────────────────
 
-    public List<AppRelease>        AllReleases    { get; set; } = [];
-    public AppRelease?             LatestRelease  { get; set; }
-    public List<VersionRow>        Distribution   { get; set; } = [];
-    public int                     TotalUsersWithVersion { get; set; }
-    public string?                 SuccessMessage { get; set; }
-    public string?                 ErrorMessage   { get; set; }
+    public List<AppRelease>                    AllReleases           { get; set; } = [];
+    public AppRelease?                         LatestRelease         { get; set; }
+    public List<VersionRow>                    Distribution          { get; set; } = [];
+    public Dictionary<string, List<UserEntry>> UsersByVersion        { get; set; } = new();
+    public int                                 TotalUsersWithVersion { get; set; }
+    public string?                             SuccessMessage        { get; set; }
+    public string?                             ErrorMessage          { get; set; }
 
     public record VersionRow(string Version, int UserCount, double Pct, bool IsCurrent);
+    public record UserEntry(string Email, Guid Id);
 
     // ── GET ───────────────────────────────────────────────────────────────────
 
-    public async Task OnGetAsync()
+    public async Task OnGetAsync() => await LoadAsync();
+
+    // ── POST: set minVersion on the latest release ────────────────────────────
+
+    [BindProperty] public string GlobalMinVersion { get; set; } = "1.0.0";
+
+    public async Task<IActionResult> OnPostSetGlobalMinVersionAsync()
     {
-        await LoadAsync();
-    }
-
-    // ── POST: publish new release ─────────────────────────────────────────────
-
-    [BindProperty] public string? NewVersion       { get; set; }
-    [BindProperty] public string? NewMinVersion    { get; set; }
-    [BindProperty] public string? NewReleaseNotes  { get; set; }
-    [BindProperty] public string? NewDllsUrl       { get; set; }
-    [BindProperty] public long    NewDllsSizeBytes { get; set; }
-    [BindProperty] public string? NewDbVersion     { get; set; }
-    [BindProperty] public string? NewDbUrl         { get; set; }
-    [BindProperty] public long?   NewDbSizeBytes   { get; set; }
-
-    public async Task<IActionResult> OnPostPublishAsync()
-    {
-        if (string.IsNullOrWhiteSpace(NewVersion) || string.IsNullOrWhiteSpace(NewDllsUrl) || NewDllsSizeBytes <= 0)
+        if (string.IsNullOrWhiteSpace(GlobalMinVersion))
         {
-            ErrorMessage = "Version, DLLs URL, and DLLs size are required.";
+            ErrorMessage = "Please enter a version string (e.g. 1.0.0).";
             await LoadAsync();
             return Page();
         }
 
-        _db.AppReleases.Add(new AppRelease
-        {
-            Version       = NewVersion.Trim(),
-            MinVersion    = string.IsNullOrWhiteSpace(NewMinVersion) ? "1.0.0" : NewMinVersion.Trim(),
-            ReleaseNotes  = NewReleaseNotes?.Trim() ?? "",
-            DllsUrl       = NewDllsUrl.Trim(),
-            DllsSizeBytes = NewDllsSizeBytes,
-            DbVersion     = string.IsNullOrWhiteSpace(NewDbVersion) ? null : NewDbVersion.Trim(),
-            DbUrl         = string.IsNullOrWhiteSpace(NewDbUrl)     ? null : NewDbUrl.Trim(),
-            DbSizeBytes   = NewDbSizeBytes > 0 ? NewDbSizeBytes : null,
-            PublishedAt   = DateTime.UtcNow
-        });
+        var latest = await _db.AppReleases
+            .OrderByDescending(r => r.PublishedAt)
+            .FirstOrDefaultAsync();
 
+        if (latest is null)
+        {
+            ErrorMessage = "No release published yet. Run publish-update.ps1 first.";
+            await LoadAsync();
+            return Page();
+        }
+
+        latest.MinVersion = GlobalMinVersion.Trim();
         await _db.SaveChangesAsync();
 
-        SuccessMessage = $"Version {NewVersion} published.";
+        SuccessMessage = $"Minimum required version set to {latest.MinVersion} on v{latest.Version}.";
         await LoadAsync();
         return Page();
     }
 
-    // ── POST: update minVersion on an existing release ────────────────────────
+    // ── POST: edit minVersion on a specific release (via history table modal) ──
 
     [BindProperty] public Guid?   EditReleaseId  { get; set; }
     [BindProperty] public string? EditMinVersion { get; set; }
@@ -106,24 +97,31 @@ public class ReleasesModel : DashboardPageModel
         AllReleases   = await _db.AppReleases.OrderByDescending(r => r.PublishedAt).ToListAsync();
         LatestRelease = AllReleases.FirstOrDefault();
 
-        // Version distribution — group users by InstalledVersion
-        var usersWithVersion = await _db.Users
+        var users = await _db.Users
             .Where(u => u.InstalledVersion != null)
-            .GroupBy(u => u.InstalledVersion!)
-            .Select(g => new { Version = g.Key, Count = g.Count() })
+            .Select(u => new { u.InstalledVersion, u.Email, u.Id })
             .ToListAsync();
 
-        TotalUsersWithVersion = usersWithVersion.Sum(x => x.Count);
+        UsersByVersion = users
+            .GroupBy(u => u.InstalledVersion!)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(u => u.Email).Select(u => new UserEntry(u.Email, u.Id)).ToList());
+
+        TotalUsersWithVersion = users.Count;
 
         var currentVersion = LatestRelease?.Version;
 
-        Distribution = usersWithVersion
-            .OrderByDescending(x => x.Count)
-            .Select(x => new VersionRow(
-                x.Version,
-                x.Count,
-                TotalUsersWithVersion > 0 ? Math.Round(x.Count * 100.0 / TotalUsersWithVersion, 1) : 0,
-                x.Version == currentVersion))
+        Distribution = UsersByVersion
+            .Select(kv => new VersionRow(
+                kv.Key,
+                kv.Value.Count,
+                TotalUsersWithVersion > 0 ? Math.Round(kv.Value.Count * 100.0 / TotalUsersWithVersion, 1) : 0,
+                kv.Key == currentVersion))
+            .OrderByDescending(r => r.UserCount)
             .ToList();
+
+        // Default the minVersion input to the current latest release value (or 1.0.0)
+        GlobalMinVersion = LatestRelease?.MinVersion ?? "1.0.0";
     }
 }

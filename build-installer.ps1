@@ -131,12 +131,10 @@ Write-Host "`n==> Building WPF installer - inner (v$Version) ..." -ForegroundCol
 & dotnet publish $InstallerProj `
     --configuration Release `
     --framework     net8.0-windows `
-    --runtime       win-x64 `
     --output        $OutputDir `
     --no-self-contained `
     -p:PublishSingleFile=true `
-    -p:Version=$Version `
-    -p:AssemblyVersion=$Version
+    -p:Version=$Version
 
 if ($LASTEXITCODE -ne 0) { throw "WPF installer build failed" }
 

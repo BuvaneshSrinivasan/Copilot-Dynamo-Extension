@@ -44,10 +44,29 @@ public static class UserEndpoints
         // Track which extension version the client is running.
         var clientVersion = httpContext.Request.Headers["X-Client-Version"].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(clientVersion) && clientVersion != user.InstalledVersion)
-        {
             user.InstalledVersion = clientVersion;
-            await db.SaveChangesAsync(ct);
+
+        // Apply the daily reset here too — the middleware only covers /api/chat,
+        // so without this the panel would display a stale count on days with no chat activity.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (user.LastResetDate != today)
+        {
+            if (user.LastResetDate.HasValue && (user.DailyRequestCount > 0 || user.DailyTokenCount > 0))
+            {
+                db.UsageLogs.Add(new UsageLog
+                {
+                    UserId       = user.Id,
+                    Date         = user.LastResetDate.Value,
+                    RequestCount = user.DailyRequestCount,
+                    TokenCount   = user.DailyTokenCount
+                });
+            }
+            user.DailyRequestCount = 0;
+            user.DailyTokenCount   = 0;
+            user.LastResetDate     = today;
         }
+
+        await db.SaveChangesAsync(ct);
 
         var now = DateTime.UtcNow;
 

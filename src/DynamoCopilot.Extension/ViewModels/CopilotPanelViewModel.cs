@@ -293,6 +293,7 @@ namespace DynamoCopilot.Extension.ViewModels
             _specGenerator = new SpecGeneratorService(_llmService);
             OnPropertyChanged(nameof(IsApiKeyMissing));
             OnPropertyChanged(nameof(IsApiKeyPresent));
+            OnPropertyChanged(nameof(IsChatInputEnabled));
             OnPropertyChanged(nameof(ApiKeyWarningMessage));
         }
 

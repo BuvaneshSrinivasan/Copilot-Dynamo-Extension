@@ -24,7 +24,7 @@ ProjectAssetsFile=<PATH>obj/project.assets.json
 RootNamespace=DynamoCopilot.Extension
 RunAnalyzers=
 RunAnalyzersDuringLiveAnalysis=
-SolutionPath=<PATH>../../DynamoCopilot.slnx
+SolutionPath=<PATH>../../Copilot-Dynamo-Extension.sln
 TargetFrameworkIdentifier=.NETFramework
 TargetPath=<PATH>bin/Debug/net48/DynamoCopilot.Extension.dll
 TargetRefPath=
@@ -80,6 +80,7 @@ ViewModels/
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
  SuggestNodesPanelViewModel.cs
+ UpdateBannerViewModel.cs
 Views/
  AuthFormView.xaml.cs
  CopilotPanelView.xaml.cs
@@ -186,7 +187,7 @@ ProjectAssetsFile=<PATH>obj/project.assets.json
 RootNamespace=DynamoCopilot.Extension
 RunAnalyzers=
 RunAnalyzersDuringLiveAnalysis=
-SolutionPath=<PATH>../../DynamoCopilot.slnx
+SolutionPath=<PATH>../../Copilot-Dynamo-Extension.sln
 TargetFrameworkIdentifier=.NETCoreApp
 TargetPath=<PATH>bin/Debug/net8.0-windows/DynamoCopilot.Extension.dll
 TargetRefPath=<PATH>obj/Debug/net8.0-windows/ref/DynamoCopilot.Extension.dll
@@ -242,6 +243,7 @@ ViewModels/
  SettingsPanelViewModel.cs
  SpecCardViewModel.cs
  SuggestNodesPanelViewModel.cs
+ UpdateBannerViewModel.cs
 Views/
  AuthFormView.xaml.cs
  CopilotPanelView.xaml.cs

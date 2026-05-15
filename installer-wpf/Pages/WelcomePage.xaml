@@ -94,7 +94,7 @@
             </TextBlock>
 
             <!-- ── Tagline ── -->
-            <TextBlock Text="Your AI coding partner for Autodesk Dynamo"
+            <TextBlock Text="AI Python code generation and smart node search for Dynamo"
                        Foreground="#5A6899"
                        FontFamily="Segoe UI"
                        FontSize="13"

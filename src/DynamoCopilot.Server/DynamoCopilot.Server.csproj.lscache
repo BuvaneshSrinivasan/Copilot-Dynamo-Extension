@@ -21,7 +21,7 @@ ProjectAssetsFile=<PATH>obj/project.assets.json
 RootNamespace=DynamoCopilot.Server
 RunAnalyzers=
 RunAnalyzersDuringLiveAnalysis=
-SolutionPath=<PATH>../../DynamoCopilot.slnx
+SolutionPath=<PATH>../../Copilot-Dynamo-Extension.sln
 TargetFrameworkIdentifier=.NETCoreApp
 TargetPath=<PATH>bin/Debug/net8.0/DynamoCopilot.Server.dll
 TargetRefPath=<PATH>obj/Debug/net8.0/ref/DynamoCopilot.Server.dll
@@ -60,6 +60,7 @@ Endpoints/
  AuthEndpoints.cs
  ChatEndpoints.cs
  NodeEndpoints.cs
+ ReleaseEndpoints.cs
  UserEndpoints.cs
 Filters/LicenseFilter.cs
 Middleware/RateLimitMiddleware.cs
@@ -76,8 +77,13 @@ Migrations/
  20260502133105_AddUserLicenses.Designer.cs
  20260504150527_AddUsageLogs.cs
  20260504150527_AddUsageLogs.Designer.cs
+ 20260515061040_AddAppRelease.cs
+ 20260515061040_AddAppRelease.Designer.cs
+ 20260515063645_AddUserInstalledVersion.cs
+ 20260515063645_AddUserInstalledVersion.Designer.cs
  AppDbContextModelSnapshot.cs
 Models/
+ AppRelease.cs
  AuthRequests.cs
  ChatRequest.cs
  DynamoNode.cs
@@ -95,6 +101,7 @@ Pages/Dashboard/
  Index.cshtml.cs
  Login.cshtml.cs
  Logout.cshtml.cs
+ Releases.cshtml.cs
  UserDetail.cshtml.cs
  Users.cshtml.cs
 Program.cs
@@ -470,6 +477,7 @@ Pages/Dashboard/
  Index.cshtml
  Login.cshtml
  Logout.cshtml
+ Releases.cshtml
  UserDetail.cshtml
  Users.cshtml
  _Layout.cshtml
@@ -481,6 +489,7 @@ Pages/Dashboard/
  Index.cshtml
  Login.cshtml
  Logout.cshtml
+ Releases.cshtml
  UserDetail.cshtml
  Users.cshtml
  _Layout.cshtml

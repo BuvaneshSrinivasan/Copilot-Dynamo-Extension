@@ -13,7 +13,9 @@ These must be present on disk. If any are missing, tell the user and stop:
 - `%APPDATA%\DynamoCopilot\models\model.onnx`
 - `%APPDATA%\DynamoCopilot\models\vocab.txt`
 
-Also check that `DYNAMO_ADMIN_KEY` and `DYNAMO_SERVER_URL` env vars are set (required for Step 4).
+For Step 4 you need the admin key and server URL. Resolve them as follows:
+- **Server URL**: use `$env:DYNAMO_SERVER_URL` if set; otherwise grep `src/DynamoCopilot.Core/Settings/DynamoCopilotSettings.cs` for the first `https://` string literal (the hardcoded Railway URL the extension uses)
+- **Admin key**: use `$env:DYNAMO_ADMIN_KEY`; if not set, ask the user before continuing
 
 ## Steps
 
