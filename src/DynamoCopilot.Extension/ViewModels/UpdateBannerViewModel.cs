@@ -178,7 +178,10 @@ namespace DynamoCopilot.Extension.ViewModels
         {
             try
             {
-                using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) })
+                CopilotLogger.Log("UpdateCheck: installed=" + GetInstalledVersion()
+                    + ", checking " + serverUrl.TrimEnd('/') + "/api/version/latest");
+
+                using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(40) })
                 {
                     http.DefaultRequestHeaders.Add("User-Agent", "DynamoCopilot-Extension");
 
@@ -211,6 +214,11 @@ namespace DynamoCopilot.Extension.ViewModels
 
                             if (available || required)
                             {
+                                CopilotLogger.Log("UpdateCheck: "
+                                    + installed + " < " + latest
+                                    + (required ? " (required, minVersion=" + minimum + ")" : " (optional)")
+                                    + " — showing banner");
+
                                 DispatchToUi(() =>
                                 {
                                     IsUpdateRequired  = required;
@@ -219,6 +227,10 @@ namespace DynamoCopilot.Extension.ViewModels
                                         : "Update v" + manifest.Version + " is available";
                                     IsDllUpdateVisible = true;
                                 });
+                            }
+                            else
+                            {
+                                CopilotLogger.Log("UpdateCheck: already on latest (" + installed + ")");
                             }
                         }
                     }
@@ -294,14 +306,19 @@ namespace DynamoCopilot.Extension.ViewModels
             var stagingDir = Path.Combine(destBase, "update");
             var zipPath    = Path.Combine(destBase, "update.zip");
 
+            var newVersion = _manifest.Version;
+            CopilotLogger.Log("UpdateDownload: starting v" + newVersion
+                + " from " + _manifest.Dlls.Url);
+
             DispatchToUi(() => { IsDownloading = true; DownloadProgress = 0; DllStatusMessage = "Downloading update…"; });
 
             try
             {
                 await DownloadFileAsync(_manifest.Dlls.Url, zipPath,
-                    pct => DispatchToUi(() => { DownloadProgress = pct; DllStatusMessage = "Downloading update… " + pct + "%"; }))
+                    pct => DispatchToUi(() => { DownloadProgress = pct; DllStatusMessage = "Downloading v" + newVersion + "… " + pct + "%"; }))
                     .ConfigureAwait(false);
 
+                CopilotLogger.Log("UpdateDownload: download complete, extracting to staging");
                 DispatchToUi(() => DllStatusMessage = "Preparing update…");
 
                 await Task.Run(() =>
@@ -320,11 +337,16 @@ namespace DynamoCopilot.Extension.ViewModels
                     Process.Start(new ProcessStartInfo
                     {
                         FileName        = updaterPath,
-                        Arguments       = "--apply-update " + pid,
+                        Arguments       = "--apply-update " + pid + " " + newVersion,
                         UseShellExecute = false,
                         CreateNoWindow  = true,
                         WindowStyle     = ProcessWindowStyle.Hidden
                     });
+                    CopilotLogger.Log("UpdateDownload: Updater.exe launched (PID " + pid + "), waiting for Revit to close");
+                }
+                else
+                {
+                    CopilotLogger.Log("UpdateDownload: WARNING — Updater.exe not found at " + updaterPath);
                 }
 
                 DispatchToUi(() =>
@@ -332,7 +354,7 @@ namespace DynamoCopilot.Extension.ViewModels
                     IsDownloading      = false;
                     IsDllDownloadReady = true;
                     DownloadProgress   = 100;
-                    DllStatusMessage   = "Update ready — restart Dynamo to apply";
+                    DllStatusMessage   = "Update ready — close Revit to apply (not just Dynamo)";
                 });
             }
             catch (Exception ex)

@@ -772,6 +772,8 @@ The JSON wire format is byte-for-byte identical — dictionaries serialize the s
 
 Users receive DLL-only updates silently — no new installer exe, no UAC prompt. The DLLs live in `%AppData%\DynamoCopilot\` (user-writable), so the update applies without elevation.
 
+**Critical:** Users must close **Revit** entirely — not just the Dynamo panel. The DLLs are loaded into the Revit process. The Updater.exe watches the Revit PID; closing only the Dynamo panel keeps Revit running and the Updater waiting indefinitely.
+
 ### End-to-end flow
 
 ```
@@ -779,21 +781,27 @@ Developer                        Server / GitHub             User (Dynamo open)
 ─────────                        ───────────────             ──────────────────
 Bump <Version> in .csproj
 /publish-update skill →
-  build DLL zip (~5 MB)
+  build DLL zip (~18 MB)
   upload to GitHub releases
   POST /admin/release        →  AppReleases table updated
 
-                                                             Opens Dynamo
+                                                             Opens Revit/Dynamo
                                                              Extension calls GET /api/version/latest
+                                                             (40s timeout — Railway cold starts ~20-30s)
                                                              Sees newer version → shows banner
-                                                             Clicks Install → downloads zip
-                                                             Launches Updater.exe --apply-update <pid>
-                                                             (Updater waits in background)
+                                                             Clicks Install → downloads zip in background
+                                                             Launches Updater.exe --apply-update <pid> <newVersion>
+                                                             Banner: "Update ready — close Revit to apply"
                                                              
-                                                             User closes Dynamo / Revit
+                                                             User closes REVIT (not just Dynamo)
                                                              Updater.exe wakes up
+                                                             Reads current DLL version for logging
                                                              Copies update\ → live AppData folder
-                                                             Next open: new DLL loads automatically
+                                                             Logs: "v1.0.5 → v1.0.6 (55 files updated)"
+                                                             
+                                                             User opens Revit
+                                                             New DLL loads automatically
+                                                             User info panel shows new version number
 ```
 
 ### Key files
@@ -819,11 +827,24 @@ Bump <Version> in .csproj
 ### UpdateBannerViewModel — critical design rules
 
 - **Static singleton** — `UpdateBannerViewModel.Instance` is shared between both panel VMs. Both panels bind to the same object, so Install/Dismiss in one panel instantly updates the other. Do not create new instances.
-- **`StartAsync` is idempotent** — uses `Interlocked.Exchange` so both ViewExtensions can call it; only the first one triggers the version check.
-- **DLL update** — downloads `dlls-vX.Y.Z.zip` to `%AppData%\DynamoCopilot\update\`, launches `DynamoCopilot.Updater.exe --apply-update <pid>`, shows "Restart Dynamo to apply".
+- **`StartAsync` is idempotent** — uses `Interlocked.Exchange` so both ViewExtensions can call it; only the first one triggers the version check. Runs once per Revit session.
+- **40s HTTP timeout** — Railway cold starts take 20–30 seconds. 12s was too short and caused timeouts on the first open after a period of inactivity.
+- **DLL update** — downloads `dlls-vX.Y.Z.zip` to `%AppData%\DynamoCopilot\update\`, launches `DynamoCopilot.Updater.exe --apply-update <pid> <newVersion>`, shows "close Revit to apply".
+- **Close Revit, not Dynamo** — the Updater waits for the Revit PID (`Process.GetCurrentProcess().Id`) to exit. Closing the Dynamo panel alone keeps Revit alive and the Updater blocking.
 - **nodes.db update** — reads `last_built_at` from the local Metadata SQLite table; if older than `manifest.NodesDb.DbVersion`, shows a secondary "Update DB" button. The DB file is overwritten directly (SQLite is safe to swap while running).
 - **`IsBannerVisible`** is a computed property (`IsDllUpdateVisible || IsDbUpdateVisible`) — do not set it directly.
 - **Version comparison** — uses `System.Version` parsing and `<` operator. The installed version comes from `Assembly.GetExecutingAssembly().GetName().Version`.
+- **Version display** — `InstalledVersionDisplay` property on both panel VMs reads `Assembly.GetExecutingAssembly().GetName().Version` and is shown in the user info panel as "Version: v1.0.6".
+
+### Updater.exe logging (`%AppData%\DynamoCopilot\updater.log`)
+
+Each run appends lines like:
+```
+[2026-05-15 14:23:17] Staged: v1.0.6 | Installed: 1.0.5 | Waiting for Revit PID 35040 to exit…
+[2026-05-15 14:27:11] Revit exited. Installing v1.0.6…
+[2026-05-15 14:27:11] Done. v1.0.5 → v1.0.6 (55 files updated, 1 skipped).
+```
+If the Updater is stuck (last line is still "Waiting for Revit PID…"), Revit hasn't been fully closed yet.
 
 ### DLL zip structure (inside `dlls-vX.Y.Z.zip`)
 

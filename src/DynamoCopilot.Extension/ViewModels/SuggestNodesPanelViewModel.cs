@@ -110,6 +110,15 @@ namespace DynamoCopilot.Extension.ViewModels
             private set { _userEmail = value; OnPropertyChanged(); }
         }
 
+        public string InstalledVersionDisplay
+        {
+            get
+            {
+                var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                return v == null ? "" : $"v{v.Major}.{v.Minor}.{v.Build}";
+            }
+        }
+
         public bool IsLicenceActive
         {
             get => _isLicenceActive;

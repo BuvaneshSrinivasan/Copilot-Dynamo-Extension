@@ -5,17 +5,17 @@ using System.IO;
 namespace DynamoCopilot.Updater
 {
     // Tiny helper launched by the extension after a staged DLL update is downloaded.
-    // Waits for the host process (Revit/Dynamo) to exit, then copies the staged files
+    // Waits for the Revit host process to fully exit, then copies the staged files
     // from %AppData%\DynamoCopilot\update\ over the live extension files.
     //
-    // Usage: DynamoCopilot.Updater.exe --apply-update <pid>
+    // Usage: DynamoCopilot.Updater.exe --apply-update <pid> <newVersion>
     static class Program
     {
         static void Main(string[] args)
         {
             if (args.Length < 2 || args[0] != "--apply-update")
             {
-                Log("Usage: DynamoCopilot.Updater.exe --apply-update <pid>");
+                Log("Usage: DynamoCopilot.Updater.exe --apply-update <pid> <newVersion>");
                 return;
             }
 
@@ -24,6 +24,8 @@ namespace DynamoCopilot.Updater
                 Log("Invalid process ID: " + args[1]);
                 return;
             }
+
+            var newVersion = args.Length >= 3 ? args[2] : "unknown";
 
             var appData    = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var destBase   = Path.Combine(appData, "DynamoCopilot");
@@ -35,7 +37,12 @@ namespace DynamoCopilot.Updater
                 return;
             }
 
-            Log("Waiting for process " + pid + " to exit…");
+            // Read the currently installed version before we overwrite anything.
+            var currentVersion = GetInstalledVersion(destBase);
+
+            Log("Staged: v" + newVersion
+                + " | Installed: " + (currentVersion ?? "unknown")
+                + " | Waiting for Revit PID " + pid + " to exit…");
 
             try
             {
@@ -45,17 +52,18 @@ namespace DynamoCopilot.Updater
             catch (ArgumentException)
             {
                 // Process already exited — proceed with the update.
+                Log("Revit PID " + pid + " already exited.");
             }
             catch (Exception ex)
             {
                 Log("Warning: could not wait for process: " + ex.Message);
             }
 
-            Log("Host process exited. Applying update…");
-            ApplyUpdate(stagingDir, destBase);
+            Log("Revit exited. Installing v" + newVersion + "…");
+            ApplyUpdate(stagingDir, destBase, currentVersion ?? "?", newVersion);
         }
 
-        static void ApplyUpdate(string stagingDir, string destBase)
+        static void ApplyUpdate(string stagingDir, string destBase, string fromVersion, string toVersion)
         {
             int success = 0;
             int skipped = 0;
@@ -67,7 +75,6 @@ namespace DynamoCopilot.Updater
                     var fileName = Path.GetFileName(srcFile);
 
                     // Skip updating ourselves — the running Updater.exe is locked by the OS.
-                    // It will be updated the next time the user runs the full installer.
                     if (string.Equals(fileName, "DynamoCopilot.Updater.exe", StringComparison.OrdinalIgnoreCase))
                     {
                         skipped++;
@@ -85,7 +92,6 @@ namespace DynamoCopilot.Updater
                     {
                         File.Copy(srcFile, destFile, overwrite: true);
                         success++;
-                        Log("Updated: " + relPath);
                     }
                     catch (Exception ex)
                     {
@@ -95,12 +101,29 @@ namespace DynamoCopilot.Updater
                 }
 
                 Directory.Delete(stagingDir, recursive: true);
-                Log("Done. " + success + " files updated, " + skipped + " skipped.");
+                Log("Done. v" + fromVersion + " → v" + toVersion
+                    + " (" + success + " files updated, " + skipped + " skipped).");
             }
             catch (Exception ex)
             {
                 Log("Fatal error during update: " + ex.Message);
             }
+        }
+
+        static string? GetInstalledVersion(string destBase)
+        {
+            // Try net8.0-windows first (Revit 2025+), fall back to net48.
+            foreach (var tfm in new[] { "net8.0-windows", "net48" })
+            {
+                var dll = Path.Combine(destBase, tfm, "DynamoCopilot.Extension.dll");
+                if (!File.Exists(dll)) continue;
+                try
+                {
+                    return FileVersionInfo.GetVersionInfo(dll).FileVersion ?? null;
+                }
+                catch { }
+            }
+            return null;
         }
 
         static void Log(string message)

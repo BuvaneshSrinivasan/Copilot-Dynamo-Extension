@@ -581,6 +581,17 @@
                                    FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>
 
+                    <!-- Version row -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="Version:"
+                                   FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding InstalledVersionDisplay}"
+                                   FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
                     <!-- Licence status -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Ellipse Width="8" Height="8" Margin="0,0,7,0" VerticalAlignment="Center">
