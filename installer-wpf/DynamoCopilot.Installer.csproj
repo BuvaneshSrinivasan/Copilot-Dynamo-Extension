@@ -13,7 +13,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <ApplicationIcon />
     <!-- Change Company here to update the publisher shown in the installer UI -->
-    <Company>BimEra</Company>
+    <Company>BIMEra</Company>
     <Product>DynamoCopilot</Product>
     <!-- Version is injected at publish time via -p:Version= (build-installer.ps1). -->
     <FileVersion>$(Version)</FileVersion>

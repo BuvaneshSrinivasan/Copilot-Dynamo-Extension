@@ -115,7 +115,7 @@
             </TextBlock>
 
             <!-- ── Instruction ── -->
-            <TextBlock Text="Open Revit, launch Dynamo, and look for the BimEra menu."
+            <TextBlock Text="Open Revit, launch Dynamo, and look for the BIMEra menu."
                        Foreground="#374260"
                        FontFamily="Segoe UI"
                        FontSize="12"

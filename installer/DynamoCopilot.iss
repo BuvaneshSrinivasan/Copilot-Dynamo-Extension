@@ -11,7 +11,7 @@
 #endif
 
 #define AppName      "DynamoCopilot"
-#define AppPublisher "BimEra"
+#define AppPublisher "BIMEra"
 #define ServerUrl    "https://radiant-determination-production.up.railway.app"
 ; DLLs are published here by build-installer.ps1 before iscc runs
 #define DistDir      "dist"

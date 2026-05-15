@@ -66,7 +66,7 @@
                   MouseLeftButtonDown="DragBar_MouseLeftButtonDown"
                   Background="Transparent">
                 <TextBlock Text="DynamoCopilot Setup"
-                           Foreground="#2E3860"
+                           Foreground="#8090BE"
                            FontFamily="Segoe UI" FontSize="11"
                            VerticalAlignment="Center" Margin="20,0"/>
                 <Button Style="{StaticResource CloseBtn}"

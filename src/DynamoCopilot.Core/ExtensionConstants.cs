@@ -10,7 +10,7 @@ namespace DynamoCopilot.Core
 
     public static class ExtensionConstants
     {
-        public const string TabName = "BimEra"; 
+        public const string TabName = "BIMEra";
         public const string CopilotId      = "Copilot";
         public const string SuggestNodesId = "SuggestNodes";
 

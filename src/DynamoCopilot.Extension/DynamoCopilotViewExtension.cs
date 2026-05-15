@@ -48,7 +48,7 @@ namespace DynamoCopilot.Extension
 
             try
             {
-                var bimEraMenu  = FindOrCreateBimEraMenu(loadedParams.dynamoMenu.Items, TabName);
+                var bimEraMenu  = FindOrCreateBIMEraMenu(loadedParams.dynamoMenu.Items, TabName);
                 _toggleMenuItem = new MenuItem { Header = Name };
                 _toggleMenuItem.Click += OnTogglePanel;
                 bimEraMenu.Items.Add(_toggleMenuItem);
@@ -127,11 +127,11 @@ namespace DynamoCopilot.Extension
         }
 
         /// <summary>
-        /// Finds the "BimEra" top-level menu item if one already exists (added by the
+        /// Finds the "BIMEra" top-level menu item if one already exists (added by the
         /// Suggest Nodes extension), or creates and registers a new one. Both extensions
-        /// share a single "BimEra" menu entry regardless of load order.
+        /// share a single "BIMEra" menu entry regardless of load order.
         /// </summary>
-        private static MenuItem FindOrCreateBimEraMenu(
+        private static MenuItem FindOrCreateBIMEraMenu(
             System.Collections.IList menuItems, string tabName)
         {
             foreach (var item in menuItems)

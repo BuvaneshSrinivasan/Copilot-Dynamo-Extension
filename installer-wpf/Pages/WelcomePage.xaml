@@ -95,7 +95,7 @@
 
             <!-- ── Tagline ── -->
             <TextBlock Text="AI Python code generation and smart node search for Dynamo"
-                       Foreground="#5A6899"
+                       Foreground="#8090BE"
                        FontFamily="Segoe UI"
                        FontSize="13"
                        HorizontalAlignment="Center"
@@ -110,8 +110,8 @@
 
             <!-- ── Version / publisher ── -->
             <TextBlock x:Name="VersionText"
-                       Text="v1.0.0 · BimEra"
-                       Foreground="#2E3860"
+                       Text="v1.0.0 · BIMEra"
+                       Foreground="#6B7BAA"
                        FontFamily="Segoe UI"
                        FontSize="11"
                        HorizontalAlignment="Center"

@@ -10,7 +10,7 @@
     <Platforms>x64</Platforms>
     <LangVersion>10</LangVersion>
     <Nullable>enable</Nullable>
-    <Company>BimEra</Company>
+    <Company>BIMEra</Company>
     <Product>DynamoCopilot</Product>
   </PropertyGroup>
 
