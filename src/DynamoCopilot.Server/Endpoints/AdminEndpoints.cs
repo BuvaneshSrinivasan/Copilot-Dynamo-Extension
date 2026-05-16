@@ -54,7 +54,9 @@ public static class AdminEndpoints
         group.MapPost("/users/{id:guid}/reset-usage", ResetUsageAsync);
         group.MapPatch("/users/{id:guid}/limits", SetLimitsAsync);
         group.MapDelete("/users", DeleteUserAsync);
+        group.MapGet("/releases", GetReleasesAsync);
         group.MapPost("/release", PublishReleaseAsync);
+        group.MapDelete("/release/{id:guid}", DeleteReleaseAsync);
         group.MapPatch("/release/{id:guid}/minVersion", UpdateMinVersionAsync);
         group.MapPatch("/release/latest/db", UpdateLatestDbAsync);
     }
@@ -456,6 +458,30 @@ public static class AdminEndpoints
             version    = release.Version,
             minVersion = release.MinVersion
         });
+    }
+
+    // ── GET /admin/releases ───────────────────────────────────────────────────
+    private static async Task<IResult> GetReleasesAsync(AppDbContext db, CancellationToken ct)
+    {
+        var releases = await db.AppReleases
+            .OrderByDescending(r => r.PublishedAt)
+            .Select(r => new { r.Id, r.Version, r.MinVersion, r.PublishedAt })
+            .ToListAsync(ct);
+
+        return Results.Json(releases);
+    }
+
+    // ── DELETE /admin/release/{id} ────────────────────────────────────────────
+    private static async Task<IResult> DeleteReleaseAsync(Guid id, AppDbContext db, CancellationToken ct)
+    {
+        var release = await db.AppReleases.FindAsync(new object[] { id }, ct);
+        if (release is null)
+            return Results.NotFound(new { error = "Release not found." });
+
+        db.AppReleases.Remove(release);
+        await db.SaveChangesAsync(ct);
+
+        return Results.Json(new { ok = true, deleted = release.Version, id = release.Id });
     }
 
     private static DateTime AddDuration(DateTime date, int amount, string unit) => unit switch
