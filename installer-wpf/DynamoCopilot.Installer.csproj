@@ -11,7 +11,7 @@
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <ApplicationIcon />
+    <ApplicationIcon>logo.ico</ApplicationIcon>
     <!-- Change Company here to update the publisher shown in the installer UI -->
     <Company>BIMEra</Company>
     <Product>DynamoCopilot</Product>
@@ -21,6 +21,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\DynamoCopilot.Core\DynamoCopilot.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="logo.ico"/>
+    <Resource Include="Resources\logo.png"/>
   </ItemGroup>
 
   <ItemGroup>

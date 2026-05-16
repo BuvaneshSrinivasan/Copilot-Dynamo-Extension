@@ -18,7 +18,7 @@
                     Width="380" Margin="0,-10,0,0">
 
             <!-- Heading -->
-            <TextBlock Text="Setting up DynamoCopilot"
+            <TextBlock Text="Setting up Dynamo Copilot"
                        Foreground="#E2E8F8"
                        FontFamily="Segoe UI Light"
                        FontSize="26"
@@ -56,15 +56,15 @@
             <!-- Percent label -->
             <TextBlock x:Name="PercentText"
                        Text="0%"
-                       Foreground="#2E3860"
+                       Foreground="#5A6899"
                        FontFamily="Segoe UI"
                        FontSize="11"
                        HorizontalAlignment="Right"
                        Margin="0,0,0,28"/>
 
             <!-- Hint -->
-            <TextBlock Text="Downloading the node database and AI model (~280 MB). This is a one-time download."
-                       Foreground="#2A3255"
+            <TextBlock Text="Downloading the node database and AI model. This is a one-time download."
+                       Foreground="#5A6899"
                        FontFamily="Segoe UI"
                        FontSize="12"
                        TextWrapping="Wrap"

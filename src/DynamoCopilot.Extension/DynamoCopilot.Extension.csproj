@@ -36,6 +36,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Resources\logo.png"/>
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="DynamoCopilot_ViewExtensionDefinition.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

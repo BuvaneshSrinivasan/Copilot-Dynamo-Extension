@@ -884,8 +884,10 @@
                 <Grid>
                     <!-- Left: logo + title -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Path Data="M8,1 L9.2,5.5 L13.5,5.5 L10,8.5 L11.2,13 L8,10.5 L4.8,13 L6,8.5 L2.5,5.5 L6.8,5.5 Z"
-                              Fill="#6EC6F5" Width="14" Height="14" Stretch="Uniform" Margin="0,0,7,0"/>
+                        <Image Source="pack://application:,,,/DynamoCopilot.Extension;component/Resources/logo.png"
+                               Width="16" Height="16" Margin="0,0,7,0"
+                               RenderOptions.BitmapScalingMode="HighQuality"
+                               VerticalAlignment="Center"/>
                         <TextBlock Text="Dynamo Co-pilot"
                                    Foreground="{StaticResource TextBrush}"
                                    FontWeight="SemiBold" FontSize="13"

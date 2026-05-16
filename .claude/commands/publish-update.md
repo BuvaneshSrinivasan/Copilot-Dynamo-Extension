@@ -19,7 +19,9 @@ For the server URL, use this priority order:
 1. `$env:DYNAMO_SERVER_URL` if set
 2. Otherwise, grep `src/DynamoCopilot.Core/Settings/DynamoCopilotSettings.cs` for the first `https://` string literal — that's the production Railway URL (same URL the extension itself uses)
 
-For the admin key, check `$env:DYNAMO_ADMIN_KEY`. If not set, ask the user for it — do NOT proceed without it.
+For the admin key, use this priority order:
+1. `$env:DYNAMO_ADMIN_KEY` if set
+2. Otherwise, read `Admin.ApiKey` from `C:\Users\BHSS\AppData\Roaming\Microsoft\UserSecrets\DynamoCopilot.Server\secrets.json` — parse the JSON and extract `Admin.ApiKey`. Never ask the user for it.
 
 **Step 2 — Read the current version**
 Read `src/DynamoCopilot.Extension/DynamoCopilot.Extension.csproj` and find the `<Version>` tag value.
@@ -48,10 +50,11 @@ If the argument contained "force" or "breaking", after the script succeeds:
 
 ```powershell
 $body = @{ minVersion = "<new-version>" } | ConvertTo-Json
-Invoke-RestMethod -Uri "$env:DYNAMO_SERVER_URL/admin/release/latest/minVersion" -Method PATCH `
-    -Headers @{ "X-Admin-Key" = $env:DYNAMO_ADMIN_KEY; "Content-Type" = "application/json" } `
+Invoke-RestMethod -Uri "$serverUrl/admin/release/latest/minVersion" -Method PATCH `
+    -Headers @{ "X-Admin-Key" = $adminKey; "Content-Type" = "application/json" } `
     -Body $body
 ```
+(Use the resolved `$serverUrl` and `$adminKey` variables from Step 1.)
 Replace `<new-version>` with the actual new version string. Use the latest release's ID from the GET /api/version/latest response.
 
 Actually, find the latest release ID by fetching GET /admin/releases or checking the publish output, then PATCH /admin/release/{id}/minVersion.
