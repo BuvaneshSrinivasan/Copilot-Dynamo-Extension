@@ -380,20 +380,24 @@ public static class AdminEndpoints
         if (request.DllsSizeBytes <= 0)
             return Results.BadRequest(new { error = "dllsSizeBytes must be a positive integer." });
 
-        var release = new AppRelease
-        {
-            Version       = request.Version.Trim(),
-            MinVersion    = request.MinVersion?.Trim() ?? "1.0.0",
-            ReleaseNotes  = request.ReleaseNotes?.Trim() ?? "",
-            DllsUrl       = request.DllsUrl.Trim(),
-            DllsSizeBytes = request.DllsSizeBytes,
-            DbVersion     = request.DbVersion?.Trim(),
-            DbUrl         = request.DbUrl?.Trim(),
-            DbSizeBytes   = request.DbSizeBytes,
-            PublishedAt   = DateTime.UtcNow
-        };
+        var version = request.Version.Trim();
+        var release = await db.AppReleases.FirstOrDefaultAsync(r => r.Version == version, ct);
 
-        db.AppReleases.Add(release);
+        if (release is null)
+        {
+            release = new AppRelease { Version = version };
+            db.AppReleases.Add(release);
+        }
+
+        release.MinVersion    = request.MinVersion?.Trim() ?? "1.0.0";
+        release.ReleaseNotes  = request.ReleaseNotes?.Trim() ?? "";
+        release.DllsUrl       = request.DllsUrl.Trim();
+        release.DllsSizeBytes = request.DllsSizeBytes;
+        release.DbVersion     = request.DbVersion?.Trim();
+        release.DbUrl         = request.DbUrl?.Trim();
+        release.DbSizeBytes   = request.DbSizeBytes;
+        release.PublishedAt   = DateTime.UtcNow;
+
         await db.SaveChangesAsync(ct);
 
         return Results.Json(new

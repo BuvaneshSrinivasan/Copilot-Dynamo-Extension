@@ -214,7 +214,7 @@
                                 @if (isLatest) { <span class="badge bg-primary ms-1">Latest</span> }
                             </td>
                             <td><code class="text-warning">@rel.MinVersion</code></td>
-                            <td class="text-muted" style="font-size:.82rem">@rel.PublishedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="text-muted" style="font-size:.82rem">@rel.PublishedAt.AddHours(5).AddMinutes(30).ToString("yyyy-MM-dd HH:mm") IST</td>
                             <td class="text-muted" style="font-size:.82rem; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis"
                                 title="@rel.ReleaseNotes">@(string.IsNullOrWhiteSpace(rel.ReleaseNotes) ? "—" : rel.ReleaseNotes)</td>
                             <td>
