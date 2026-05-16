@@ -39,25 +39,24 @@ The script will:
 1. Build both TFMs of the extension DLLs
 2. Build DynamoCopilot.Updater.exe
 3. Zip them into `dlls-v{version}.zip`
-4. Upload the zip to GitHub Releases (tag v1.0.0, overwrites if exists)
-5. Call POST /admin/release on the server to publish the manifest
+4. Upload the zip to GitHub Releases (tag v{version}, overwrites if exists)
+5. Call POST /admin/release on the server — upserts the row for this version (no duplicate created)
 
 Wait for it to complete. Show the full output.
 
 **Step 5 — Handle force-update (if requested)**
 If the argument contained "force" or "breaking", after the script succeeds:
-- The `publish-update.ps1` script already passes `-MinVersion` equal to the new version when `$env:DYNAMO_MIN_VERSION` is set, but since we're running without that, call the server directly:
+1. Fetch the release ID: `GET /admin/releases` returns all releases ordered by PublishedAt DESC — take the first entry's `id`.
+2. PATCH the minVersion gate:
 
 ```powershell
+$releases = Invoke-RestMethod -Uri "$serverUrl/admin/releases" -Headers @{ "X-Admin-Key" = $adminKey }
+$latestId = $releases[0].id
 $body = @{ minVersion = "<new-version>" } | ConvertTo-Json
-Invoke-RestMethod -Uri "$serverUrl/admin/release/latest/minVersion" -Method PATCH `
+Invoke-RestMethod -Uri "$serverUrl/admin/release/$latestId/minVersion" -Method PATCH `
     -Headers @{ "X-Admin-Key" = $adminKey; "Content-Type" = "application/json" } `
     -Body $body
 ```
-(Use the resolved `$serverUrl` and `$adminKey` variables from Step 1.)
-Replace `<new-version>` with the actual new version string. Use the latest release's ID from the GET /api/version/latest response.
-
-Actually, find the latest release ID by fetching GET /admin/releases or checking the publish output, then PATCH /admin/release/{id}/minVersion.
 
 **Step 6 — Report**
 After success, show:

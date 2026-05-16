@@ -460,12 +460,14 @@ These remain available for Postman/scripting. The dashboard at `/Dashboard` is t
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /admin/users | All users with their licences and usage |
-| POST | /admin/grant | `{ email, extension, months }` â€” grant or extend a licence |
-| POST | /admin/revoke | `{ email, extension }` â€” revoke a licence (sets IsActive=false) |
+| POST | /admin/grant | `{ email, extension, months }` — grant or extend a licence |
+| POST | /admin/revoke | `{ email, extension }` — revoke a licence (sets IsActive=false) |
 | POST | /admin/users/{id}/activate | Re-enable a deactivated account |
 | POST | /admin/users/{id}/deactivate | Global account kill switch |
 | POST | /admin/users/{id}/reset-usage | Reset daily counters |
 | PATCH | /admin/users/{id}/limits | Override per-user rate limits |
+| GET | /admin/releases | List all release rows with IDs (for cleanup) |
+| DELETE | /admin/release/{id} | Delete a specific release row by ID |
 
 ### Admin Dashboard (Razor Pages)
 
@@ -476,7 +478,10 @@ Accessed at `https://your-server/Dashboard/Login`. Protected by an 8-hour sessio
 | Login | `/Dashboard/Login` | Admin key form |
 | Dashboard | `/Dashboard` | Stat cards (users, licences, tokens today), registrations chart, top users |
 | Users | `/Dashboard/Users` | Searchable/filterable user table with licence badges and usage bars |
-| User Detail | `/Dashboard/UserDetail?id=â€¦` | 4 usage cards (today + month), 30-day dual-axis chart, grant/revoke licences, request limit override, notes |
+| User Detail | `/Dashboard/UserDetail?id=…` | 4 usage cards (today + month), 30-day dual-axis chart, grant/revoke licences, request limit override, notes |
+| Releases | `/Dashboard/Releases` | Latest version, min-version gate, version distribution, release history |
+
+**Dashboard timestamps** are displayed in IST (+5:30). The DB stores UTC; the Releases page converts with `.AddHours(5).AddMinutes(30)` inline in the Razor view.
 
 ### POST /api/chat/stream â€” Request / Response
 
@@ -659,6 +664,24 @@ X-Admin-Key: your-admin-key
 
 ---
 
+## Branding & Logo
+
+The BIMEra logo lives at `assets/logo.png` (source) and `assets/logo.ico` (multi-size ICO generated from it: 16/32/48/256 px). Do not regenerate the ICO manually — it was created via `System.Drawing` in PowerShell and is committed.
+
+| Location | File | Usage |
+|----------|------|-------|
+| Installer exe icon (taskbar, Explorer, Alt+Tab) | `installer-wpf/logo.ico` | `<ApplicationIcon>` in `DynamoCopilot.Installer.csproj` |
+| Bootstrapper exe icon | `installer-wpf/Bootstrapper/logo.ico` | `<ApplicationIcon>` in `Bootstrapper.csproj` |
+| Installer window icon | `installer-wpf/logo.ico` | `Icon="logo.ico"` on `MainWindow.xaml` |
+| Installer welcome page graphic | `installer-wpf/Resources/logo.png` | `<Image>` in `WelcomePage.xaml` replacing the old SVG node-graph |
+| Auth form brand mark | `src/DynamoCopilot.Extension/Resources/logo.png` | `<Image>` in `AuthFormView.xaml` replacing the old sparkle Path |
+| Copilot panel header | same Resource | `<Image>` 16×16 in `CopilotPanelView.xaml` replacing the star Path |
+| Suggest Nodes panel header | same Resource | `<Image>` 16×16 in `SuggestNodesPanelView.xaml` replacing the search icon Path |
+
+The Extension resource is declared in `DynamoCopilot.Extension.csproj` as `<Resource Include="Resources\logo.png"/>` and referenced in XAML via `pack://application:,,,/DynamoCopilot.Extension;component/Resources/logo.png`.
+
+---
+
 ## Installer Build
 
 The installer is a self-contained WPF exe (`installer-wpf/`) that bundles the extension DLLs as an embedded zip payload.
@@ -820,7 +843,9 @@ Bump <Version> in .csproj
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /api/version/latest | None | Extension polls this on startup |
-| POST | /admin/release | X-Admin-Key | Publish a new release manifest |
+| GET | /admin/releases | X-Admin-Key | List all release rows with IDs (for inspection/cleanup) |
+| POST | /admin/release | X-Admin-Key | Upsert release manifest — updates existing row for that version, inserts if new |
+| DELETE | /admin/release/{id} | X-Admin-Key | Delete a specific release row by ID |
 | PATCH | /admin/release/{id}/minVersion | X-Admin-Key | Update the version gate without republishing |
 | PATCH | /admin/release/latest/db | X-Admin-Key | Update nodes.db info on the latest release |
 
@@ -891,7 +916,7 @@ Bumps the version, builds the DLL zip (~5 MB), uploads to GitHub, and calls `POS
 /publish-update 1.0.5 force   # exact version + force gate
 ```
 
-Requires env vars: `DYNAMO_ADMIN_KEY`, `DYNAMO_SERVER_URL`.
+Server URL is auto-resolved from `DynamoCopilotSettings.cs`. Admin key is read from `C:\Users\BHSS\AppData\Roaming\Microsoft\UserSecrets\DynamoCopilot.Server\secrets.json` (`Admin.ApiKey`) — no env vars needed.
 
 ### `/update-nodesdb [full|stats]`
 
@@ -903,7 +928,7 @@ Runs the NodeIndexer incrementally (or fully), uploads the new `nodes.db` to Git
 /update-nodesdb stats     # show current DB stats only, no update
 ```
 
-Requires env vars: `DYNAMO_ADMIN_KEY`, `DYNAMO_SERVER_URL`.
+Server URL is auto-resolved from `DynamoCopilotSettings.cs`. Admin key is read from `C:\Users\BHSS\AppData\Roaming\Microsoft\UserSecrets\DynamoCopilot.Server\secrets.json` (`Admin.ApiKey`) — no env vars needed.
 
 ---
 
