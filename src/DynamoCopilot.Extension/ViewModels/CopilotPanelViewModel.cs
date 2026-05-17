@@ -827,7 +827,7 @@ namespace DynamoCopilot.Extension.ViewModels
                         : "No Python Script node selected. Select one and try again.");
                 }
             }
-            catch (Exception ex) { ShowStatus($"Insert failed: {ex.Message}"); }
+            catch (Exception ex) { CopilotLogger.Log("[Copilot] InsertCode failed", ex); ShowStatus($"Insert failed: {ex.Message}"); }
         }
 
         public async Task FixPythonErrorAsync()
@@ -883,7 +883,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
                 await SendMessageAsync("!direct " + message);
             }
-            catch (Exception ex) { ShowStatus($"Could not read error: {ex.Message}"); }
+            catch (Exception ex) { CopilotLogger.Log("[Copilot] FixPythonError failed", ex); ShowStatus($"Could not read error: {ex.Message}"); }
         }
 
         public void CopyToClipboard(string text)

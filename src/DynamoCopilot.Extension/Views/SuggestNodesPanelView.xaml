@@ -233,11 +233,7 @@
 
                     <!-- Card header -->
                     <Grid Margin="10,8,10,4">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="{Binding Name}"
                                        FontWeight="SemiBold" FontSize="13"
                                        Foreground="{StaticResource TextBrush}"
@@ -247,14 +243,6 @@
                                        Foreground="{StaticResource MutedBrush}"
                                        Margin="0,1,0,0"/>
                         </StackPanel>
-                        <!-- Score badge -->
-                        <Border Grid.Column="1"
-                                Background="#1A2A3A" CornerRadius="10"
-                                Padding="7,2" VerticalAlignment="Top" Margin="8,0,0,0">
-                            <TextBlock Text="{Binding ScoreText}"
-                                       Foreground="{StaticResource AccentBrush}"
-                                       FontSize="10" FontFamily="Consolas"/>
-                        </Border>
                     </Grid>
 
                     <!-- AI reason -->

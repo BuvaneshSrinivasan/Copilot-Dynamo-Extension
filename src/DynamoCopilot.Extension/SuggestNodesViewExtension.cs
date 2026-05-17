@@ -51,7 +51,7 @@ namespace DynamoCopilot.Extension
                 _toggleMenuItem.Click += OnTogglePanel;
                 bimEraMenu.Items.Add(_toggleMenuItem);
             }
-            catch { }
+            catch (Exception ex) { CopilotLogger.Log("[SuggestNodes] Menu setup failed", ex); }
         }
 
         public void Shutdown()
@@ -147,7 +147,7 @@ namespace DynamoCopilot.Extension
 
                 return int.TryParse(versionNumber, out var year) ? year : null;
             }
-            catch { return null; }
+            catch (Exception ex) { CopilotLogger.Log("[SuggestNodes] TryGetRevitYear failed", ex); return null; }
         }
 
         private static string? ResolveCurrentPackagesDir(ViewLoadedParams loadedParams)
@@ -189,7 +189,7 @@ namespace DynamoCopilot.Extension
 
                 return null;
             }
-            catch { return null; }
+            catch (Exception ex) { CopilotLogger.Log("[SuggestNodes] ResolveCurrentPackagesDir failed", ex); return null; }
         }
     }
 }

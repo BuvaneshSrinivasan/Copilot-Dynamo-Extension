@@ -309,28 +309,30 @@ namespace DynamoCopilot.Extension.ViewModels
 
             try
             {
-                var results = await _localSearchService.SearchAsync(query);
+                var installedTask = _localSearchService.SearchInstalledAsync(query, _packageState.IsInstalled);
+                var onlineTask    = _localSearchService.SearchAsync(query, excludePackage: _packageState.IsInstalled);
+                await Task.WhenAll(installedTask, onlineTask);
 
-                foreach (var node in results)
-                {
-                    var card = new NodeSuggestionCardViewModel(
-                        node, _packageState, _downloader, InsertNodeToCanvas, _obsoleteStore);
-                    if (_packageState.IsInstalled(node.PackageName))
-                        InstalledNodeSuggestions.Add(card);
-                    else
-                        OnlineNodeSuggestions.Add(card);
-                }
+                foreach (var node in installedTask.Result)
+                    InstalledNodeSuggestions.Add(new NodeSuggestionCardViewModel(
+                        node, _packageState, _downloader, InsertNodeToCanvas, _obsoleteStore));
+
+                foreach (var node in onlineTask.Result)
+                    OnlineNodeSuggestions.Add(new NodeSuggestionCardViewModel(
+                        node, _packageState, _downloader, InsertNodeToCanvas, _obsoleteStore));
 
                 OnPropertyChanged(nameof(HasInstalledNodes));
                 OnPropertyChanged(nameof(HasOnlineNodes));
 
-                int total = InstalledNodeSuggestions.Count + OnlineNodeSuggestions.Count;
-                StatusMessage = total == 0
+                int inst   = InstalledNodeSuggestions.Count;
+                int online = OnlineNodeSuggestions.Count;
+                StatusMessage = (inst + online) == 0
                     ? "No matching nodes found."
-                    : $"Found {total} node{(total == 1 ? "" : "s")}.";
+                    : $"Found {inst} installed, {online} online.";
             }
             catch (Exception ex)
             {
+                CopilotLogger.Log("[SuggestNodes] SearchNodesAsync failed", ex);
                 ShowStatus($"Search failed: {ex.Message}");
             }
             finally
@@ -362,6 +364,7 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             catch (Exception ex)
             {
+                CopilotLogger.Log($"[SuggestNodes] InsertNodeToCanvas failed for {node.Name}", ex);
                 ShowStatus($"Insert failed: {ex.Message}");
                 return false;
             }

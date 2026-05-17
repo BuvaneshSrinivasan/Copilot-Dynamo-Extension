@@ -53,7 +53,7 @@ namespace DynamoCopilot.Extension
                 _toggleMenuItem.Click += OnTogglePanel;
                 bimEraMenu.Items.Add(_toggleMenuItem);
             }
-            catch { }
+            catch (Exception ex) { CopilotLogger.Log("[Copilot] Menu setup failed", ex); }
         }
 
         public void Shutdown()
@@ -63,7 +63,7 @@ namespace DynamoCopilot.Extension
                 if (System.Windows.Application.Current != null)
                     System.Windows.Application.Current.DispatcherUnhandledException -= OnDispatcherUnhandledException;
             }
-            catch { }
+            catch (Exception ex) { CopilotLogger.Log("[Copilot] Shutdown cleanup failed", ex); }
 
             _viewModel?.Shutdown();
             _viewModel = null;
@@ -102,7 +102,7 @@ namespace DynamoCopilot.Extension
             {
                 CopilotLogger.Log("DispatcherUnhandledException (handled)", ex);
                 e.Handled = true;
-                try { _viewModel?.HandleRenderException(ex); } catch { }
+                try { _viewModel?.HandleRenderException(ex); } catch (Exception inner) { CopilotLogger.Log("[Copilot] HandleRenderException failed", inner); }
             }
             else
             {

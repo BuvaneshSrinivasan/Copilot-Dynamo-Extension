@@ -6,6 +6,7 @@ using System.Windows.Input;
 using DynamoCopilot.Core.Models;
 using DynamoCopilot.Core.Settings;
 using DynamoCopilot.Extension.Commands;
+using DynamoCopilot.Extension.Services;
 using RelayCommand = DynamoCopilot.Extension.Commands.RelayCommand;
 
 namespace DynamoCopilot.Extension.ViewModels
@@ -264,6 +265,7 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             catch (Exception ex)
             {
+                CopilotLogger.Log("[Settings] Connection test failed", ex);
                 StatusMessage = $"Error: {ex.Message}";
             }
             finally

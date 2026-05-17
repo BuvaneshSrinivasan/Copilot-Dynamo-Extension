@@ -137,7 +137,7 @@ namespace DynamoCopilot.Extension.ViewModels
             Description = node.Description ?? string.Empty;
             Reason      = node.Reason      ?? string.Empty;
             NodeType    = node.NodeType    ?? string.Empty;
-            ScoreText   = node.Score > 0f  ? $"{node.Score:P0}" : string.Empty;
+            ScoreText   = string.Empty;
 
             InputPorts  = node.InputPorts  != null && node.InputPorts.Length  > 0
                 ? string.Join(", ", node.InputPorts)  : string.Empty;
@@ -176,6 +176,7 @@ namespace DynamoCopilot.Extension.ViewModels
             }
             catch (Exception ex)
             {
+                CopilotLogger.Log($"[SuggestNodes] Download failed for {PackageName}", ex);
                 StatusText = $"Download failed: {ex.Message}";
             }
             finally

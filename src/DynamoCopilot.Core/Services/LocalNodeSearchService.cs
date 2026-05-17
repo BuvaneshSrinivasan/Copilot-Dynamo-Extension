@@ -48,11 +48,13 @@ namespace DynamoCopilot.Core.Services
 
         /// <summary>
         /// Returns up to <paramref name="topK"/> node suggestions for <paramref name="query"/>.
+        /// Online search only — pass <paramref name="excludePackage"/> to skip installed packages.
         /// </summary>
         public async Task<IReadOnlyList<NodeSuggestion>> SearchAsync(
-            string            query,
-            int               topK  = TopK,
-            CancellationToken ct    = default)
+            string             query,
+            int                topK           = TopK,
+            Func<string, bool>? excludePackage = null,
+            CancellationToken  ct             = default)
         {
             if (string.IsNullOrWhiteSpace(query)) return Array.Empty<NodeSuggestion>();
 
@@ -60,7 +62,11 @@ namespace DynamoCopilot.Core.Services
             var records = _obsoleteStore != null
                 ? all.FindAll(r => !_obsoleteStore.IsObsolete(r.PackageName, r.Name))
                 : all;
-            if (records.Count == 0)              return Array.Empty<NodeSuggestion>();
+
+            if (excludePackage != null)
+                records = records.FindAll(r => !excludePackage(r.PackageName));
+
+            if (records.Count == 0) return Array.Empty<NodeSuggestion>();
 
             // ── 1. Try vector search ──────────────────────────────────────────
             if (_embedder != null)
@@ -78,6 +84,56 @@ namespace DynamoCopilot.Core.Services
 
             // ── 2. BM25 keyword fallback ──────────────────────────────────────
             return KeywordSearch(records, query, topK);
+        }
+
+        /// <summary>
+        /// Returns ALL installed-package nodes that substring-match <paramref name="query"/>,
+        /// ranked by semantic similarity. No result cap — mirrors old BimEra48 behaviour.
+        /// </summary>
+        public async Task<IReadOnlyList<NodeSuggestion>> SearchInstalledAsync(
+            string             query,
+            Func<string, bool> isInstalled,
+            CancellationToken  ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return Array.Empty<NodeSuggestion>();
+
+            var all     = await LoadCacheAsync(ct).ConfigureAwait(false);
+            var records = _obsoleteStore != null
+                ? all.FindAll(r => !_obsoleteStore.IsObsolete(r.PackageName, r.Name))
+                : all;
+
+            var installedRecords = records.FindAll(r => isInstalled(r.PackageName));
+            if (installedRecords.Count == 0) return Array.Empty<NodeSuggestion>();
+
+            // Substring match — same normalization as old BimEra48 extension
+            var normalizedQuery = NormalizeForMatch(query);
+            var matched = installedRecords.FindAll(r => SubstringMatches(r, normalizedQuery));
+            if (matched.Count == 0) return Array.Empty<NodeSuggestion>();
+
+            // Rank by semantic similarity; fall back to BM25. No TopK cap.
+            if (_embedder != null)
+            {
+                try
+                {
+                    var queryVec = await _embedder.EmbedAsync(query, ct).ConfigureAwait(false);
+                    return VectorSearch(matched, queryVec, matched.Count);
+                }
+                catch { }
+            }
+
+            return KeywordSearch(matched, query, matched.Count);
+        }
+
+        // ── Substring match helpers ───────────────────────────────────────────
+
+        private static string NormalizeForMatch(string text)
+            => text.ToUpperInvariant()
+                   .Replace(".", "").Replace(" ", "").Replace("_", "").Replace("-", "");
+
+        private static bool SubstringMatches(LocalNodeRecord r, string normalizedQuery)
+        {
+            var matchText = NormalizeForMatch($"{r.Name} {r.Category} {r.PackageName}");
+            return matchText.Contains(normalizedQuery);
         }
 
         // ── Vector search ─────────────────────────────────────────────────────
