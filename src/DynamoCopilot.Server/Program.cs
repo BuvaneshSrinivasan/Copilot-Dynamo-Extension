@@ -35,6 +35,7 @@ builder.Services.AddScoped<NodeRerankService>();
 // UsageTracker is Scoped so GeminiService and RateLimitMiddleware share the
 // same instance within one request — GeminiService writes, middleware reads.
 builder.Services.AddScoped<UsageTracker>();
+builder.Services.AddScoped<AdminNotifier>();
 
 // DATABASE
 // UseVector() enables pgvector support in Npgsql — must be called here on the

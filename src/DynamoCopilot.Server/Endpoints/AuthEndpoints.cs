@@ -34,6 +34,7 @@ public static class AuthEndpoints
     private static async Task<IResult> RegisterAsync(
         RegisterRequest request,
         AppDbContext db,
+        AdminNotifier notifier,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || !request.Email.Contains('@'))
@@ -72,6 +73,9 @@ public static class AuthEndpoints
         db.Users.Add(user);
         db.UserLicenses.Add(suggestNodesLicense);
         await db.SaveChangesAsync(ct);
+
+        // Fire-and-forget — email failure must never break registration.
+        _ = notifier.NotifyNewRegistrationAsync(email);
 
         return Results.Created($"/auth/users/{user.Id}", new { message = "Account created. You can now log in." });
     }
