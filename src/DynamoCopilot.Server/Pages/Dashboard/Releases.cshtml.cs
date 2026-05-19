@@ -34,9 +34,10 @@ public class ReleasesModel : DashboardPageModel
 
     public async Task<IActionResult> OnPostSetGlobalMinVersionAsync()
     {
-        if (string.IsNullOrWhiteSpace(GlobalMinVersion))
+        if (string.IsNullOrWhiteSpace(GlobalMinVersion) ||
+            !System.Version.TryParse(GlobalMinVersion.Trim(), out _))
         {
-            ErrorMessage = "Please enter a version string (e.g. 1.0.0).";
+            ErrorMessage = "Invalid version format. Use x.y.z (e.g. 1.0.0).";
             await LoadAsync();
             return Page();
         }
@@ -67,9 +68,10 @@ public class ReleasesModel : DashboardPageModel
 
     public async Task<IActionResult> OnPostSetMinVersionAsync()
     {
-        if (EditReleaseId == null || string.IsNullOrWhiteSpace(EditMinVersion))
+        if (EditReleaseId == null || string.IsNullOrWhiteSpace(EditMinVersion) ||
+            !System.Version.TryParse(EditMinVersion.Trim(), out _))
         {
-            ErrorMessage = "Release ID and minVersion are required.";
+            ErrorMessage = "Release ID and minVersion are required. Use x.y.z (e.g. 1.0.0).";
             await LoadAsync();
             return Page();
         }

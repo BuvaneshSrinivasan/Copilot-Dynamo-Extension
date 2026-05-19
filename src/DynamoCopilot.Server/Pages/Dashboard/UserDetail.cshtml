@@ -31,7 +31,8 @@
         {
             <form method="post" asp-page-handler="Deactivate" asp-route-id="@Model.Id">
                 <button class="btn btn-outline-danger btn-sm"
-                        onclick="return confirm('Deactivate @user.Email?')">
+                        data-msg="Deactivate @user.Email?"
+                        onclick="return confirm(this.dataset.msg)">
                     <i class="bi bi-slash-circle"></i> Deactivate
                 </button>
             </form>
@@ -46,7 +47,8 @@
         }
         <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Id">
             <button class="btn btn-danger btn-sm"
-                    onclick="return confirm('Permanently delete @user.Email and all their data? This cannot be undone.')">
+                    data-msg="Permanently delete @user.Email and all their data? This cannot be undone."
+                    onclick="return confirm(this.dataset.msg)">
                 <i class="bi bi-trash"></i> Delete Account
             </button>
         </form>
@@ -154,7 +156,7 @@
                                 }
                             </div>
                             <div class="d-flex gap-2">
-                                @if (isValid)
+                                @if (lic is { IsActive: true })
                                 {
                                     <form method="post" asp-page-handler="Revoke" asp-route-id="@Model.Id">
                                         <input type="hidden" name="RevokeExtension" value="@ext" />

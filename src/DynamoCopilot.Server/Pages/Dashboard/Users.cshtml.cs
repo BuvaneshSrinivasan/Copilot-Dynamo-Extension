@@ -30,7 +30,7 @@ public class UsersModel : DashboardPageModel
 
     public async Task OnGetAsync()
     {
-        var defaultRequestLimit = _config.GetValue<int>("RateLimit:DailyRequestLimit", 1000);
+        var defaultRequestLimit = _config.GetValue<int>("RateLimit:DailyRequestLimit", 200);
         var now = DateTime.UtcNow;
 
         var query = _db.Users.Include(u => u.Licenses).AsQueryable();

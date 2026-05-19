@@ -83,7 +83,10 @@ public class UserDetailModel : DashboardPageModel
     public async Task<IActionResult> OnPostGrantAsync()
     {
         var unit = (GrantUnit ?? "months").ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(GrantExtension) || GrantAmount <= 0 || unit is not ("days" or "weeks" or "months"))
+        if (string.IsNullOrWhiteSpace(GrantExtension) ||
+            GrantExtension is not ("Copilot" or "SuggestNodes") ||
+            GrantAmount <= 0 ||
+            unit is not ("days" or "weeks" or "months"))
         {
             TempData["Error"] = "Invalid extension or duration value.";
             return RedirectToPage(new { Id });
@@ -206,17 +209,22 @@ public class UserDetailModel : DashboardPageModel
         CustomRequestLimit = DetailUser.RequestLimit;
         Notes              = DetailUser.Notes;
 
-        // Live today counters
-        TodayRequests = DetailUser.DailyRequestCount;
-        TodayTokens   = DetailUser.DailyTokenCount;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Historical logs — last 30 days + current month
-        var today        = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Live today counters — only valid if LastResetDate is today (lazy reset means
+        // stale users still carry yesterday's counts until their next request).
+        TodayRequests = DetailUser.LastResetDate == today ? DetailUser.DailyRequestCount : 0;
+        TodayTokens   = DetailUser.LastResetDate == today ? DetailUser.DailyTokenCount   : 0;
+
+        // Historical logs — last 30 days + current month.
+        // Fetch from the earlier of thirtyAgo or monthStart so the monthly sum
+        // is never missing rows from the 1st of the month on a 31-day month.
         var thirtyAgo    = today.AddDays(-29);
         var monthStart   = new DateOnly(today.Year, today.Month, 1);
+        var fetchFrom    = thirtyAgo < monthStart ? thirtyAgo : monthStart;
 
         var logs = await _db.UsageLogs
-            .Where(l => l.UserId == Id && l.Date >= thirtyAgo)
+            .Where(l => l.UserId == Id && l.Date >= fetchFrom)
             .ToListAsync();
 
         // Monthly total = all logs this month + today's live counters

@@ -34,11 +34,13 @@ public class IndexModel : DashboardPageModel
         var users = await _db.Users.Include(u => u.Licenses).ToListAsync();
         var now = DateTime.UtcNow;
 
+        var today = DateOnly.FromDateTime(now);
+
         TotalUsers = users.Count;
         ActiveUsers = users.Count(u => u.IsActive);
         ActiveLicences = users.SelectMany(u => u.Licenses).Count(l => l.IsActive && (l.EndDate == null || l.EndDate > now));
-        TotalTokensToday = users.Sum(u => (long)u.DailyTokenCount);
-        TotalRequestsToday = users.Sum(u => u.DailyRequestCount);
+        TotalTokensToday   = users.Sum(u => u.LastResetDate == today ? (long)u.DailyTokenCount : 0L);
+        TotalRequestsToday = users.Sum(u => u.LastResetDate == today ? u.DailyRequestCount : 0);
 
         // Registrations by month — last 6 months including empty months
         var months = Enumerable.Range(0, 6)
@@ -47,8 +49,12 @@ public class IndexModel : DashboardPageModel
             .Select(d => new { d.Year, d.Month, Label = d.ToString("MMM yy") })
             .ToList();
 
+        // Filter from the 1st of the earliest shown month so every fetched user
+        // falls into one of the 6 chart buckets (using now.AddMonths(-6) could
+        // include users from month -6 that have no bucket and get silently dropped).
+        var earliestMonth = new DateTime(now.Year, now.Month, 1).AddMonths(-5);
         var regCounts = users
-            .Where(u => u.CreatedAt >= now.AddMonths(-6))
+            .Where(u => u.CreatedAt >= earliestMonth)
             .GroupBy(u => new { u.CreatedAt.Year, u.CreatedAt.Month })
             .ToDictionary(g => (g.Key.Year, g.Key.Month), g => g.Count());
 
