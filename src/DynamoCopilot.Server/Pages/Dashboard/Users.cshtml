@@ -124,12 +124,7 @@
                             }
                         </td>
                         <td>
-                            <div class="small">@u.DailyRequestCount / @u.EffectiveReqLimit</div>
-                            <div class="progress progress-xs mt-1" style="max-width:70px">
-                                <div class="progress-bar bg-primary"
-                                     style="width:@(Math.Min(100, u.DailyRequestCount * 100 / Math.Max(1, u.EffectiveReqLimit)))%">
-                                </div>
-                            </div>
+                            <div class="small">@u.DailyRequestCount.ToString("N0")</div>
                         </td>
                         <td>
                             <div class="small">@u.DailyTokenCount.ToString("N0")</div>
