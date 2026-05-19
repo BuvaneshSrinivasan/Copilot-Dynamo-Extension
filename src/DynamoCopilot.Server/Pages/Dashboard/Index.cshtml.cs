@@ -78,7 +78,7 @@ public class IndexModel : DashboardPageModel
             .ToList();
 
         TopUsers = users
-            .Where(u => u.DailyTokenCount > 0 || u.DailyRequestCount > 0)
+            .Where(u => u.LastResetDate == today && (u.DailyTokenCount > 0 || u.DailyRequestCount > 0))
             .OrderByDescending(u => u.DailyTokenCount)
             .Take(6)
             .Select(u => new TopUser(u.Email, u.DailyTokenCount, u.DailyRequestCount))
