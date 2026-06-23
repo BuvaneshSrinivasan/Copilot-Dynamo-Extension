@@ -31,7 +31,8 @@ public class UsersModel : DashboardPageModel
     public async Task OnGetAsync()
     {
         var defaultRequestLimit = _config.GetValue<int>("RateLimit:DailyRequestLimit", 200);
-        var now = DateTime.UtcNow;
+        var now   = DateTime.UtcNow;
+        var today = DateOnly.FromDateTime(now);
 
         var query = _db.Users.Include(u => u.Licenses).AsQueryable();
 
@@ -45,18 +46,33 @@ public class UsersModel : DashboardPageModel
 
         var users = await query.OrderByDescending(u => u.CreatedAt).ToListAsync();
 
-        Users = users.Select(u => new UserRow(
-            Id:                u.Id,
-            Email:             u.Email,
-            IsActive:          u.IsActive,
-            Licenses:          u.Licenses.Select(l => new LicenceInfo(
-                                   l.Extension, l.IsActive,
-                                   l.EndDate.HasValue && l.EndDate.Value < now)).ToList(),
-            DailyRequestCount: u.DailyRequestCount,
-            DailyTokenCount:   u.DailyTokenCount,
-            EffectiveReqLimit: u.RequestLimit ?? defaultRequestLimit,
-            CreatedAt:         u.CreatedAt
-        )).ToList();
+        // All-time totals come from UsageLogs (one row per user per day); today's
+        // counts live on User.DailyRequestCount/DailyTokenCount until the next
+        // lazy reset writes them to UsageLogs, so they must be added on top.
+        var usageTotals = await _db.UsageLogs
+            .GroupBy(l => l.UserId)
+            .Select(g => new { UserId = g.Key, Requests = g.Sum(l => l.RequestCount), Tokens = g.Sum(l => l.TokenCount) })
+            .ToDictionaryAsync(x => x.UserId, x => x);
+
+        Users = users.Select(u =>
+        {
+            var todayRequests = u.LastResetDate == today ? u.DailyRequestCount : 0;
+            var todayTokens   = u.LastResetDate == today ? u.DailyTokenCount   : 0;
+            usageTotals.TryGetValue(u.Id, out var totals);
+
+            return new UserRow(
+                Id:                  u.Id,
+                Email:               u.Email,
+                IsActive:            u.IsActive,
+                Licenses:            u.Licenses.Select(l => new LicenceInfo(
+                                         l.Extension, l.IsActive,
+                                         l.EndDate.HasValue && l.EndDate.Value < now)).ToList(),
+                OverallRequestCount: (totals?.Requests ?? 0) + todayRequests,
+                OverallTokenCount:   (totals?.Tokens   ?? 0) + todayTokens,
+                EffectiveReqLimit:   u.RequestLimit ?? defaultRequestLimit,
+                CreatedAt:           u.CreatedAt
+            );
+        }).ToList();
     }
 
     public async Task<IActionResult> OnPostCreateAsync()
@@ -108,7 +124,7 @@ public class UsersModel : DashboardPageModel
     public record UserRow(
         Guid Id, string Email, bool IsActive,
         List<LicenceInfo> Licenses,
-        int DailyRequestCount, int DailyTokenCount,
+        int OverallRequestCount, int OverallTokenCount,
         int EffectiveReqLimit,
         DateTime CreatedAt);
 
