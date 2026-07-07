@@ -34,9 +34,10 @@ namespace DynamoCopilot.Core.Services.Providers
 
             return new Dictionary<string, object>
             {
-                ["models"]   = models,
-                ["stream"]   = true,
-                ["messages"] = msgArray
+                ["models"]     = models,
+                ["max_tokens"] = MaxTokens,
+                ["stream"]     = true,
+                ["messages"]   = msgArray
             };
         }
     }

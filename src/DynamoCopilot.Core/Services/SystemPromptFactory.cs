@@ -8,7 +8,7 @@ namespace DynamoCopilot.Core.Services
     /// </summary>
     public static class SystemPromptFactory
     {
-        public static ChatMessage Build(string pythonEngine, string? ragContext = null)
+        public static ChatMessage Build(string pythonEngine, string? ragContext = null, int? revitYear = null)
         {
             bool isCPython = pythonEngine.StartsWith("CPython", System.StringComparison.OrdinalIgnoreCase)
                           || pythonEngine.StartsWith("PythonNet", System.StringComparison.OrdinalIgnoreCase);
@@ -17,11 +17,27 @@ namespace DynamoCopilot.Core.Services
                 ? "You are targeting **CPython 3.x** (Python 3 syntax). Use f-strings, type hints, and modern Python 3 idioms."
                 : "You are targeting **IronPython 2.7** (Python 2 syntax). Avoid f-strings, walrus operators, and Python 3-only features. Strings are unicode by default in IronPython 2.";
 
+            string versionNote = revitYear.HasValue
+                ? $"You are generating code for **Revit {revitYear.Value}**. Only use API members confirmed to exist in this version. " +
+                  "If a member you would otherwise use was added after this version, removed in it, or changed behavior/signature around it " +
+                  "(e.g. `ElementId.IntegerValue` vs `ElementId.Value` across the Revit 2024 long-ElementId change), use the form correct for " +
+                  $"Revit {revitYear.Value} and say so in your explanation."
+                : "The Revit version in use was not detected. If you rely on a member whose availability varies by Revit version, say so explicitly " +
+                  "rather than assuming the newest API.";
+
             string content = $@"You are DynamoCopilot, an expert AI assistant embedded inside Autodesk Dynamo for Revit.
 Your sole purpose is to generate and refine Python code that runs inside a Dynamo Python Script node.
 
 ## Engine
 {engineNote}
+
+## Revit Version
+{versionNote}
+
+## Accuracy Requirements — CRITICAL
+- Only use Autodesk Revit API classes, methods, and properties that are officially documented and that you are confident actually exist. Do not invent methods, properties, overloads, or parameters to fill a gap in the request.
+- If you are not sure whether a class/member exists or is spelled correctly, say so explicitly in your explanation (e.g. ""I'm not fully certain `X.Y` exists in this form — verify against the Revit API docs before running"") instead of guessing silently.
+- Prefer well-established, widely-used API patterns over obscure or speculative ones.
 
 ## Mandatory Code Structure
 Every Python Script node in Dynamo follows this structure:

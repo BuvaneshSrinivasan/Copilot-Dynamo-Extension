@@ -87,6 +87,7 @@ namespace DynamoCopilot.Extension.ViewModels
         private readonly RevitApiRagService        _ragService;
         private          SpecGeneratorService      _specGenerator;
         private readonly SpecificationStateManager _specState;
+        private readonly int?                      _revitYear;
         private bool     _isClassifying;
 
         public AuthFormViewModel AuthForm { get; }
@@ -283,6 +284,8 @@ namespace DynamoCopilot.Extension.ViewModels
                 string.IsNullOrWhiteSpace(settings.RevitApiXmlPath) ? null : settings.RevitApiXmlPath);
             _specGenerator  = new SpecGeneratorService(_llmService);
             _specState      = new SpecificationStateManager();
+            _revitYear      = RevitEnvironmentInterop.TryGetRevitYear(
+                msg => CopilotLogger.Log("[Copilot] TryGetRevitYear failed", msg));
 
             AuthForm     = new AuthFormViewModel(_authService);
             SettingsVm = new SettingsPanelViewModel(settings);
@@ -696,6 +699,9 @@ namespace DynamoCopilot.Extension.ViewModels
 
             CopilotLogger.Log("Streaming", $"complete  tokens={tokenCount}  chars={contentBuilder.Length}");
 
+            bool wasTruncated = _llmService is OpenAiLlmService oaiSvc && oaiSvc.WasTruncated;
+            if (wasTruncated) CopilotLogger.Log("Streaming", "response truncated — hit max_tokens before finishing");
+
             var rawContent  = contentBuilder.ToString();
             var fullContent = EnsureCodeFenced(rawContent);
             var codeSnippet = ExtractFirstCodeBlock(fullContent);
@@ -709,10 +715,10 @@ namespace DynamoCopilot.Extension.ViewModels
                 $"hasFence={dbgHasFence}  hasPythonFence={dbgHasPythonFence}  hasNewlineFence={dbgHasNewlineFence}  hasCloseFence={dbgHasCloseFence}  " +
                 $"rawLen={rawContent.Length}  fenced={rawContent != fullContent}");
 
-            // Feature 2: validate + auto-fix Revit enum values in generated code
+            // Feature 2: validate + auto-fix Revit enum values / invented API members in generated code
             if (codeSnippet != null && _settings.EnableCodeValidation)
             {
-                var validation = RevitEnumValidator.Instance.Validate(codeSnippet);
+                var validation = ValidateGeneratedCode(codeSnippet);
                 CopilotLogger.Log("Validation", $"isValid={validation.IsValid}  issues={validation.Issues.Count}");
                 if (!validation.IsValid)
                 {
@@ -728,6 +734,15 @@ namespace DynamoCopilot.Extension.ViewModels
                         assistantVm.ValidationWarning = FormatValidationWarning(validation);
                     }
                 }
+            }
+
+            if (wasTruncated)
+            {
+                const string truncationMessage =
+                    "Response was cut off before finishing (hit the model's output limit) — the code above may be incomplete. Try asking to \"continue\" or resend the request.";
+                assistantVm.ValidationWarning = string.IsNullOrEmpty(assistantVm.ValidationWarning)
+                    ? truncationMessage
+                    : assistantVm.ValidationWarning + "\n\n" + truncationMessage;
             }
 
             assistantVm.Content     = StripCodeBlock(fullContent);
@@ -769,7 +784,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 var fixPrompt = AutoFixRequestBuilder.Build(currentCode, currentResult, attempt);
                 var fixMessages = new List<ChatMessage>
                 {
-                    SystemPromptFactory.Build(DetectPythonEngine()),
+                    SystemPromptFactory.Build(DetectPythonEngine(), revitYear: _revitYear),
                     new ChatMessage { Role = ChatRole.User, Content = fixPrompt }
                 };
 
@@ -784,7 +799,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 var fixedCode = ExtractFirstCodeBlock(sb.ToString());
                 if (fixedCode == null) return null;
 
-                var revalidation = RevitEnumValidator.Instance.Validate(fixedCode);
+                var revalidation = ValidateGeneratedCode(fixedCode);
                 if (revalidation.IsValid) return fixedCode;
 
                 currentCode   = fixedCode;
@@ -794,12 +809,33 @@ namespace DynamoCopilot.Extension.ViewModels
             return null;
         }
 
+        /// <summary>
+        /// Runs both Revit code validators and merges their issues.
+        /// <see cref="RevitEnumValidator"/> catches invented enum-style constants
+        /// (BuiltInParameter/BuiltInCategory/UnitTypeId); <see cref="RevitApiSurfaceValidator"/>
+        /// catches invented members on static Revit API helper classes (UnitUtils, LabelUtils, etc.).
+        /// </summary>
+        private static ValidationResult ValidateGeneratedCode(string code)
+        {
+            var enumResult    = RevitEnumValidator.Instance.Validate(code);
+            var surfaceResult = RevitApiSurfaceValidator.Instance.Validate(code);
+
+            if (enumResult.IsValid && surfaceResult.IsValid)
+                return ValidationResult.Ok();
+
+            var issues = new List<ValidationIssue>(enumResult.Issues);
+            issues.AddRange(surfaceResult.Issues);
+            return new ValidationResult { IsValid = false, Issues = issues };
+        }
+
         private static string FormatValidationWarning(ValidationResult result)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("Code Validation: the following Revit API enum values may not exist in this installation:");
+            sb.AppendLine("Code Validation: the following may not exist in this Revit installation:");
             foreach (var issue in result.Issues)
-                sb.AppendLine($"  - {issue.Category}.{issue.InvalidValue}");
+                sb.AppendLine(issue.Category == "ApiMember"
+                    ? $"  - {issue.InvalidValue}"
+                    : $"  - {issue.Category}.{issue.InvalidValue}");
             sb.Append("Verify these values before running the script.");
             return sb.ToString();
         }
@@ -974,7 +1010,7 @@ namespace DynamoCopilot.Extension.ViewModels
 
         private List<ChatMessage> BuildMessageList(string engineName, string? ragContext = null)
         {
-            var systemPrompt = SystemPromptFactory.Build(engineName, ragContext);
+            var systemPrompt = SystemPromptFactory.Build(engineName, ragContext, _revitYear);
             return ChatContextBuilder.Build(systemPrompt, _currentSession.Messages, _settings.MaxHistoryTokens);
         }
 

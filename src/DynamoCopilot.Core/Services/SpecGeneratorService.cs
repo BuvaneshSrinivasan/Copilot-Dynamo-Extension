@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using DynamoCopilot.Core.Models;
@@ -105,20 +106,26 @@ namespace DynamoCopilot.Core.Services
             return messages;
         }
 
+        // Matches an object key that's missing its opening quote, e.g. `,options":` or `{options":`
+        // — the LLM occasionally drops it when a preceding string value ends right before a key.
+        private static readonly Regex MissingKeyQuoteRegex =
+            new Regex(@"([{,])(\w+)"":", RegexOptions.Compiled);
+
         private static SpecClassificationResult Parse(string raw)
         {
             if (raw.StartsWith(SpecPrefix, StringComparison.Ordinal))
             {
                 string json = raw.Substring(SpecPrefix.Length).Trim();
                 if (json.StartsWith("```")) json = StripCodeFences(json);
-                try
-                {
-                    var spec = JsonSerializer.Deserialize<CodeSpecification>(json,
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    if (spec != null)
-                        return new SpecClassificationResult { IsSpec = true, Spec = spec };
-                }
-                catch { }
+
+                var spec = TryDeserializeSpec(json) ?? TryDeserializeSpec(MissingKeyQuoteRegex.Replace(json, "$1\"$2\":"));
+                if (spec != null)
+                    return new SpecClassificationResult { IsSpec = true, Spec = spec };
+
+                // The model committed to SPEC but produced unrepairable JSON — never show the raw
+                // wire-format text to the user. Report inconclusive (null ChatText) so the caller
+                // falls through to normal code generation instead of a broken response.
+                return new SpecClassificationResult { IsSpec = false, ChatText = null };
             }
 
             if (raw.StartsWith(ChatPrefix, StringComparison.Ordinal))
@@ -129,6 +136,16 @@ namespace DynamoCopilot.Core.Services
                 };
 
             return new SpecClassificationResult { IsSpec = false, ChatText = raw };
+        }
+
+        private static CodeSpecification? TryDeserializeSpec(string json)
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<CodeSpecification>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch { return null; }
         }
 
         private static string StripCodeFences(string text)

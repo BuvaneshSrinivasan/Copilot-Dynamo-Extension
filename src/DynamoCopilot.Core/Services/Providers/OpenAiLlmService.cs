@@ -16,10 +16,26 @@ namespace DynamoCopilot.Core.Services.Providers
     /// </summary>
     public class OpenAiLlmService : ILlmService, IDisposable
     {
+        /// <summary>
+        /// Caps worst-case generation length (matches ClaudeLlmService's cap). This does not
+        /// affect the quality of tokens generated before the cap — it only stops a response
+        /// that would otherwise ramble on indefinitely (seen with some free-tier models ignoring
+        /// the system prompt's brevity instructions). 8192 tokens is generous headroom over any
+        /// realistic Dynamo script + explanation.
+        /// </summary>
+        protected const int MaxTokens = 8192;
+
         private readonly HttpClient _http;
         private readonly string     _apiKey;
         protected readonly string   _model;
         private readonly string     _baseUrl;
+
+        /// <summary>
+        /// True if the most recent <see cref="SendStreamingAsync"/> call was cut off by
+        /// <see cref="MaxTokens"/> (finish_reason == "length") rather than finishing naturally.
+        /// Reset at the start of every call.
+        /// </summary>
+        public bool WasTruncated { get; private set; }
 
         public OpenAiLlmService(string apiKey, string model, string baseUrl = "https://api.openai.com")
         {
@@ -49,6 +65,7 @@ namespace DynamoCopilot.Core.Services.Providers
             IReadOnlyList<ChatMessage> messages,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            WasTruncated = false;
             var msgArray = BuildMessages(messages);
             var body = JsonSerializer.Serialize(BuildRequestBody(msgArray));
 
@@ -87,7 +104,13 @@ namespace DynamoCopilot.Core.Services.Providers
                     var choices = doc.RootElement.GetProperty("choices");
                     if (choices.GetArrayLength() == 0) continue;
 
-                    var delta = choices[0].GetProperty("delta");
+                    var choice = choices[0];
+                    if (choice.TryGetProperty("finish_reason", out var finishReason) &&
+                        finishReason.ValueKind == JsonValueKind.String &&
+                        finishReason.GetString() == "length")
+                        WasTruncated = true;
+
+                    var delta = choice.GetProperty("delta");
                     if (delta.TryGetProperty("content", out var content))
                         chunk = content.GetString();
                 }
@@ -107,9 +130,10 @@ namespace DynamoCopilot.Core.Services.Providers
         protected virtual Dictionary<string, object> BuildRequestBody(
             List<Dictionary<string, string>> msgArray) => new()
         {
-            ["model"]    = _model,
-            ["stream"]   = true,
-            ["messages"] = msgArray
+            ["model"]      = _model,
+            ["max_tokens"] = MaxTokens,
+            ["stream"]     = true,
+            ["messages"]   = msgArray
         };
 
         private static List<Dictionary<string, string>> BuildMessages(IReadOnlyList<ChatMessage> messages)

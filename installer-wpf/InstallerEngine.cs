@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using DynamoCopilot.Core.Settings;
@@ -14,8 +13,6 @@ public record InstallStep(string Status, int Percent);
 public class InstallerEngine
 {
     private static readonly string ProductionUrl = new DynamoCopilotSettings().ServerUrl;
-    private const string LocalServerUrl = "http://localhost:8080";
-    private const int    MaxHistory     = 40;
     private const string ReleaseBase    = "https://github.com/BuvaneshSrinivasan/Copilot-Dynamo-Extension/releases/download/v1.0.0";
 
     private static readonly (string RelPath, string Tfm)[] DynamoPaths =
@@ -220,34 +217,16 @@ public class InstallerEngine
 
     private static void WriteSettings(string destBase)
     {
-        Directory.CreateDirectory(destBase);
-        var path = Path.Combine(destBase, "settings.json");
-
-        int existingMaxHistory  = MaxHistory;
-        string existingLocalUrl = LocalServerUrl;
-
-        if (File.Exists(path))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(File.ReadAllText(path));
-                var root = doc.RootElement;
-                if (root.TryGetProperty("maxHistoryMessages", out var mh)) existingMaxHistory = mh.GetInt32();
-                if (root.TryGetProperty("localServerUrl",     out var lu)) existingLocalUrl   = lu.GetString() ?? LocalServerUrl;
-            }
-            catch { /* corrupt file – use defaults */ }
-        }
-
-        var settings = new
-        {
-            serverUrl          = ProductionUrl,
-            maxHistoryMessages = existingMaxHistory,
-            useLocalServer     = false,
-            localServerUrl     = existingLocalUrl,
-        };
-
-        File.WriteAllText(path, JsonSerializer.Serialize(settings,
-            new JsonSerializerOptions { WriteIndented = true }));
+        // destBase is exactly %AppData%\DynamoCopilot, the same path DynamoCopilotSettings
+        // reads/writes. Load() transparently decrypts the existing (DPAPI-encrypted)
+        // settings.json if present, or returns defaults on first install. Round-tripping
+        // through the real model — instead of hand-rolling a plaintext JSON blob — preserves
+        // the user's API keys, provider/model choices, and other preferences across
+        // reinstalls and updates; only the server URL is stamped over.
+        var settings = DynamoCopilotSettings.Load();
+        settings.ServerUrl      = ProductionUrl;
+        settings.UseLocalServer = false;
+        settings.Save();
     }
 
     private static void RegisterDynamo(string destBase)
