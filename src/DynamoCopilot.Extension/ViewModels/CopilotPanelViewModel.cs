@@ -688,6 +688,18 @@ namespace DynamoCopilot.Extension.ViewModels
                 Logout();
                 return;
             }
+            catch (LlmRateLimitException ex)
+            {
+                CopilotLogger.Log("Streaming rate-limited", ex);
+                string retryHint = ex.RetryAfterSeconds.HasValue
+                    ? $" Try again in about {Math.Ceiling(ex.RetryAfterSeconds.Value)}s."
+                    : " Try again shortly.";
+                assistantVm.Content     = $"The AI provider is currently rate-limited.{retryHint} " +
+                    "If this keeps happening on a free-tier model, consider adding your own API key in Settings for higher limits.";
+                assistantVm.IsStreaming = false;
+                IsStreaming = false;
+                return;
+            }
             catch (Exception ex)
             {
                 CopilotLogger.Log("Streaming LLM error", ex);

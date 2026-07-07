@@ -81,6 +81,8 @@ namespace DynamoCopilot.Core.Services.Providers
             if (!response.IsSuccessStatusCode)
             {
                 var err = await response.Content.ReadAsStringAsync();
+                if ((int)response.StatusCode == 429) // HttpStatusCode.TooManyRequests — not defined on net48
+                    throw BuildRateLimitException(err);
                 throw new HttpRequestException(
                     $"OpenAI error {(int)response.StatusCode}: {err}");
             }
@@ -122,6 +124,40 @@ namespace DynamoCopilot.Core.Services.Providers
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Parses a 429 error body into a clean, human-readable message + retry-after hint.
+        /// Handles both plain OpenAI-style bodies (<c>error.message</c>) and OpenRouter's
+        /// richer shape (<c>error.metadata.raw</c> / <c>error.metadata.retry_after_seconds</c>,
+        /// which also lists every model tried in its fallback chain under "previous_errors").
+        /// Falls back to a generic message if the body doesn't match either shape.
+        /// </summary>
+        private static LlmRateLimitException BuildRateLimitException(string errorBody)
+        {
+            string message = "The model provider is temporarily rate-limited. Please try again shortly.";
+            double? retryAfter = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(errorBody);
+                if (doc.RootElement.TryGetProperty("error", out var error))
+                {
+                    if (error.TryGetProperty("metadata", out var metadata))
+                    {
+                        if (metadata.TryGetProperty("raw", out var raw) && raw.ValueKind == JsonValueKind.String)
+                            message = raw.GetString() ?? message;
+                        if (metadata.TryGetProperty("retry_after_seconds", out var retry) && retry.TryGetDouble(out var r))
+                            retryAfter = r;
+                    }
+                    else if (error.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String)
+                    {
+                        message = msg.GetString() ?? message;
+                    }
+                }
+            }
+            catch (JsonException) { }
+
+            return new LlmRateLimitException(message, retryAfter);
+        }
 
         /// <summary>
         /// Builds the JSON request body. Overridden by providers that need a
