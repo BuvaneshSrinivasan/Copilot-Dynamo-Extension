@@ -1036,6 +1036,12 @@
                                 Foreground="{StaticResource MutedBrush}"/>
                     </Grid>
 
+                    <!-- OpenRouter fallback-chain hint -->
+                    <TextBlock Text="Comma-separated model IDs — tried in order until one responds."
+                               Visibility="{Binding IsOpenRouterSelected, Converter={StaticResource BoolToVis}}"
+                               FontSize="10" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,-6,0,10"/>
+
                     <!-- Ollama URL (Ollama only) -->
                     <StackPanel Visibility="{Binding IsOllamaSelected, Converter={StaticResource BoolToVis}}">
                         <TextBlock Text="Ollama URL" FontSize="11"

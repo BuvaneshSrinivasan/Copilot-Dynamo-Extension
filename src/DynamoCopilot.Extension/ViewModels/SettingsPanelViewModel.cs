@@ -84,6 +84,7 @@ namespace DynamoCopilot.Extension.ViewModels
                 OnPropertyChanged(nameof(ApiKeyLabel));
                 OnPropertyChanged(nameof(ApiKeyUrl));
                 OnPropertyChanged(nameof(ModelPlaceholder));
+                OnPropertyChanged(nameof(IsOpenRouterSelected));
                 StatusMessage = string.Empty;
             }
         }
@@ -137,24 +138,29 @@ namespace DynamoCopilot.Extension.ViewModels
 
         public string ApiKeyLabel => _selectedProvider switch
         {
-            AiProvider.OpenAI   => "OpenAI API Key",
-            AiProvider.Gemini   => "Gemini API Key",
-            AiProvider.Claude   => "Anthropic API Key",
-            AiProvider.DeepSeek => "DeepSeek API Key",
-            _                   => "API Key"
+            AiProvider.OpenAI     => "OpenAI API Key",
+            AiProvider.Gemini     => "Gemini API Key",
+            AiProvider.Claude     => "Anthropic API Key",
+            AiProvider.DeepSeek   => "DeepSeek API Key",
+            AiProvider.OpenRouter => "OpenRouter API Key",
+            _                     => "API Key"
         };
 
         public string ApiKeyUrl => _selectedProvider switch
         {
-            AiProvider.OpenAI   => "https://platform.openai.com/api-keys",
-            AiProvider.Gemini   => "https://aistudio.google.com/apikey",
-            AiProvider.Claude   => "https://console.anthropic.com/settings/keys",
-            AiProvider.DeepSeek => "https://platform.deepseek.com/api_keys",
-            _                   => string.Empty
+            AiProvider.OpenAI     => "https://platform.openai.com/api-keys",
+            AiProvider.Gemini     => "https://aistudio.google.com/apikey",
+            AiProvider.Claude     => "https://console.anthropic.com/settings/keys",
+            AiProvider.DeepSeek   => "https://platform.deepseek.com/api_keys",
+            AiProvider.OpenRouter => "https://openrouter.ai/keys",
+            _                     => string.Empty
         };
 
         public string ModelPlaceholder =>
             DynamoCopilotSettings.DefaultModelFor(_selectedProvider);
+
+        /// <summary>Explains the comma-separated fallback-chain format — OpenRouter only.</summary>
+        public bool IsOpenRouterSelected => _selectedProvider == AiProvider.OpenRouter;
 
 
         // ── Commands ──────────────────────────────────────────────────────────

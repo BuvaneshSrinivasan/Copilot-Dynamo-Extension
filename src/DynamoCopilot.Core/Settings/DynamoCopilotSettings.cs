@@ -131,12 +131,17 @@ namespace DynamoCopilot.Core.Settings
 
         public static string DefaultModelFor(AiProvider provider) => provider switch
         {
-            AiProvider.OpenAI   => "gpt-4o",
-            AiProvider.Gemini   => "gemini-3-flash-preview",
-            AiProvider.Claude   => "claude-sonnet-4-6",
-            AiProvider.DeepSeek => "deepseek-chat",
-            AiProvider.Ollama   => "llama3.2",
-            _                   => string.Empty
+            AiProvider.OpenAI     => "gpt-4o",
+            AiProvider.Gemini     => "gemini-3.5-flash",
+            AiProvider.Claude     => "claude-sonnet-4-6",
+            AiProvider.DeepSeek   => "deepseek-chat",
+            // Ordered fallback chain — OpenRouter tries each in turn if one errors,
+            // rate-limits, or is down. Free-tier model IDs on OpenRouter rotate/expire
+            // on the order of days, so re-verify these against openrouter.ai/models
+            // periodically rather than assuming they stay valid indefinitely.
+            AiProvider.OpenRouter => "qwen/qwen3-coder:free,poolside/laguna-m.1:free,meta-llama/llama-3.3-70b-instruct:free",
+            AiProvider.Ollama     => "llama3.2",
+            _                     => string.Empty
         };
 
         public static DynamoCopilotSettings Load()

@@ -19,11 +19,12 @@ namespace DynamoCopilot.Core.Services
 
             return settings.AiProvider switch
             {
-                AiProvider.OpenAI   => new OpenAiLlmService(key, model),
-                AiProvider.Gemini   => new GeminiLlmService(key, model),
-                AiProvider.Claude   => new ClaudeLlmService(key, model),
-                AiProvider.DeepSeek => new DeepSeekLlmService(key, model),
-                AiProvider.Ollama   => new OllamaLlmService(model, settings.Ollama.Url),
+                AiProvider.OpenAI     => new OpenAiLlmService(key, model),
+                AiProvider.Gemini     => new GeminiLlmService(key, model),
+                AiProvider.Claude     => new ClaudeLlmService(key, model),
+                AiProvider.DeepSeek   => new DeepSeekLlmService(key, model),
+                AiProvider.OpenRouter => new OpenRouterLlmService(key, model),
+                AiProvider.Ollama     => new OllamaLlmService(model, settings.Ollama.Url),
                 _                   => throw new NotSupportedException(
                                            $"Unknown provider: {settings.AiProvider}")
             };

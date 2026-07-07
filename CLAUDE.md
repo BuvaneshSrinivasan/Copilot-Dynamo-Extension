@@ -207,6 +207,24 @@ When the user sends a message, `SendMessageCoreAsync` runs a classifier that dec
 3. A synthetic code-generation user message is built from the spec steps, inputs, output, clarifying-question answers, and (if present) an `**Additional instructions from user:**` line â€” then added to `_currentSession.Messages`.
 4. `RunStreamingAsync` sends the full session history (including all of the above) to the LLM.
 
+### AI provider system â€” BYOK (Copilot only)
+
+Copilot calls the user's chosen AI provider **directly from the extension**, using the user's own API key â€” it is not proxied through the DynamoCopilot server. (The server's `GeminiService` / `ChatEndpoints.cs` streaming path still exists but is currently unused in production â€” see the `// DO NOT DELETE, SAVED FOR FUTURE USE` comment at the top of `GeminiService.cs`; it's reserved for a future managed-subscription tier.)
+
+**`AiProvider` enum** (`DynamoCopilot.Core/Models/AiProvider.cs`): `OpenAI`, `Gemini`, `Claude`, `DeepSeek`, `OpenRouter`, `Ollama`.
+
+**`LlmServiceFactory.Create(settings)`** builds the right `ILlmService` for `settings.AiProvider`, reading the per-provider API key + model from `DynamoCopilotSettings.Providers` (a `Dictionary<string, ProviderConfig>` keyed by provider name string; Ollama is tracked separately since it needs no API key, just a model + local URL).
+
+**`OpenAiLlmService`** is the generic OpenAI-wire-format client (`/v1/chat/completions` + SSE `data: {...}` streaming) â€” any provider using that wire format reuses it by passing a different `baseUrl`:
+- `DeepSeekLlmService : OpenAiLlmService` â€” 10-line subclass pointing at `api.deepseek.com`
+- `OpenRouterLlmService : OpenAiLlmService` â€” points at `openrouter.ai/api`, and overrides `BuildRequestBody` (a `protected virtual` extension point on `OpenAiLlmService`) to send an ordered `["models"] = [...]` array instead of a single `["model"] = ...` string
+
+**OpenRouter fallback chain:** `ModelName` for this provider is a **comma-separated ordered list**, not a single model ID (e.g. `qwen/qwen3-coder:free,poolside/laguna-m.1:free,meta-llama/llama-3.3-70b-instruct:free`). OpenRouter's own `models` array parameter retries the next model in the list â€” within a single HTTP call, no app-level retry needed â€” if an earlier one errors, gets moderation-flagged, rate-limits, or is down. This exists to give BYOK users a free fallback for when their primary provider (usually Gemini's free tier, which gets deprioritized during peak global-demand hours) is struggling.
+- The Settings UI reuses the *exact same* `ModelName` TextBox / `ModelPlaceholder` / Reset-button pattern used by every other provider â€” no new controls. A one-line hint below the field (bound to `IsOpenRouterSelected`) explains the comma-separated format only when OpenRouter is selected.
+- **The default chain is hardcoded** in `DynamoCopilotSettings.DefaultModelFor` and was verified against OpenRouter's live `/api/v1/models` endpoint at the time it was written (2026-07). Free-tier model IDs on OpenRouter churn/expire on the order of *days*, not months â€” re-verify the chain against `openrouter.ai/models` periodically rather than assuming it stays valid indefinitely.
+
+**net48 / net8.0 cross-target gotcha:** `DynamoCopilot.Core` multi-targets `net48;net8.0-windows`. `StringSplitOptions.TrimEntries` and the single-char `string.Split(char, StringSplitOptions)` overload do **not** exist on net48 â€” they compile fine under net8.0 and fail the net48 leg of `build-installer.ps1` with a confusing error. Use the array-based overload instead: `Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim())`.
+
 ### Per-extension licensing
 
 Licences are stored in the `UserLicenses` table (one row per user per extension). Each extension has a fixed string identifier defined in `ExtensionConstants` (Core project) and `AppConstants` (Server project) â€” both files must stay in sync.
@@ -661,6 +679,7 @@ X-Admin-Key: your-admin-key
 | Version source of truth | `<Version>` in Extension `.csproj` | Both build scripts read from there; bumping the .csproj is the only step before invoking a release skill |
 | nodes.db update | Separate optional "Update DB" button in banner | 186 MB; independent from DLL updates; SQLite file can be overwritten while Dynamo is running (no staging needed) |
 | User version tracking | `X-Client-Version` header on `GET /api/me` | Captured lazily on every panel-open; stored in `User.InstalledVersion`; powers the version-distribution table in the Releases dashboard |
+| BYOK peak-hour resilience | Added `OpenRouter` as a 6th BYOK provider with a hardcoded multi-model fallback chain | Free Gemini API keys get deprioritized during high global-demand hours; OpenRouter's `models` array cascades through several free coding models in one HTTP call, giving users resilience without cost or juggling multiple provider keys |
 
 ---
 

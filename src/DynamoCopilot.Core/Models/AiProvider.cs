@@ -9,6 +9,7 @@ namespace DynamoCopilot.Core.Models
         Gemini,
         Claude,
         DeepSeek,
+        OpenRouter,
         Ollama
     }
 }

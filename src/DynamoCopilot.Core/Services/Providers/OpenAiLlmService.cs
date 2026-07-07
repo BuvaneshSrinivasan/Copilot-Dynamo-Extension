@@ -18,7 +18,7 @@ namespace DynamoCopilot.Core.Services.Providers
     {
         private readonly HttpClient _http;
         private readonly string     _apiKey;
-        private readonly string     _model;
+        protected readonly string   _model;
         private readonly string     _baseUrl;
 
         public OpenAiLlmService(string apiKey, string model, string baseUrl = "https://api.openai.com")
@@ -50,12 +50,7 @@ namespace DynamoCopilot.Core.Services.Providers
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var msgArray = BuildMessages(messages);
-            var body = JsonSerializer.Serialize(new Dictionary<string, object>
-            {
-                ["model"]    = _model,
-                ["stream"]   = true,
-                ["messages"] = msgArray
-            });
+            var body = JsonSerializer.Serialize(BuildRequestBody(msgArray));
 
             using var request = new HttpRequestMessage(
                 HttpMethod.Post, _baseUrl + "/v1/chat/completions");
@@ -104,6 +99,18 @@ namespace DynamoCopilot.Core.Services.Providers
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Builds the JSON request body. Overridden by providers that need a
+        /// different shape (e.g. OpenRouter's "models" fallback array).
+        /// </summary>
+        protected virtual Dictionary<string, object> BuildRequestBody(
+            List<Dictionary<string, string>> msgArray) => new()
+        {
+            ["model"]    = _model,
+            ["stream"]   = true,
+            ["messages"] = msgArray
+        };
 
         private static List<Dictionary<string, string>> BuildMessages(IReadOnlyList<ChatMessage> messages)
         {
