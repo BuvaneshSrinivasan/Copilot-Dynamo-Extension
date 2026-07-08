@@ -714,6 +714,9 @@ namespace DynamoCopilot.Extension.ViewModels
             bool wasTruncated = _llmService is OpenAiLlmService oaiSvc && oaiSvc.WasTruncated;
             if (wasTruncated) CopilotLogger.Log("Streaming", "response truncated — hit max_tokens before finishing");
 
+            if (_llmService is OpenAiLlmService svcWithModel && svcWithModel.LastServedModel != null)
+                CopilotLogger.Log("Streaming", $"served by model={svcWithModel.LastServedModel}");
+
             var rawContent  = contentBuilder.ToString();
             var fullContent = EnsureCodeFenced(rawContent);
             var codeSnippet = ExtractFirstCodeBlock(fullContent);

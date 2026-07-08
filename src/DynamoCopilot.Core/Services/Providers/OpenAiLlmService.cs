@@ -25,6 +25,14 @@ namespace DynamoCopilot.Core.Services.Providers
         /// </summary>
         protected const int MaxTokens = 8192;
 
+        /// <summary>
+        /// Sampling temperature for code generation. Lower than the API default (usually 1.0)
+        /// so responses are more deterministic/repeatable — correctness matters more than
+        /// creative variety here, and free-tier models in the OpenRouter fallback chain otherwise
+        /// vary wildly run-to-run.
+        /// </summary>
+        protected const double Temperature = 0.2;
+
         private readonly HttpClient _http;
         private readonly string     _apiKey;
         protected readonly string   _model;
@@ -36,6 +44,16 @@ namespace DynamoCopilot.Core.Services.Providers
         /// Reset at the start of every call.
         /// </summary>
         public bool WasTruncated { get; private set; }
+
+        /// <summary>
+        /// The model that actually served the most recent <see cref="SendStreamingAsync"/> call,
+        /// read from the response stream's top-level "model" field. For a single-model provider
+        /// this always matches the configured model; for <see cref="OpenRouterLlmService"/> it
+        /// reveals which entry in the fallback chain actually answered, since OpenRouter can
+        /// silently fall through to a later model if earlier ones are rate-limited or down.
+        /// Null until the first chunk of a response is received.
+        /// </summary>
+        public string? LastServedModel { get; private set; }
 
         public OpenAiLlmService(string apiKey, string model, string baseUrl = "https://api.openai.com")
         {
@@ -66,6 +84,7 @@ namespace DynamoCopilot.Core.Services.Providers
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             WasTruncated = false;
+            LastServedModel = null;
             var msgArray = BuildMessages(messages);
             var body = JsonSerializer.Serialize(BuildRequestBody(msgArray));
 
@@ -103,6 +122,11 @@ namespace DynamoCopilot.Core.Services.Providers
                 try
                 {
                     using var doc = JsonDocument.Parse(data);
+                    if (LastServedModel == null &&
+                        doc.RootElement.TryGetProperty("model", out var modelProp) &&
+                        modelProp.ValueKind == JsonValueKind.String)
+                        LastServedModel = modelProp.GetString();
+
                     var choices = doc.RootElement.GetProperty("choices");
                     if (choices.GetArrayLength() == 0) continue;
 
@@ -166,10 +190,11 @@ namespace DynamoCopilot.Core.Services.Providers
         protected virtual Dictionary<string, object> BuildRequestBody(
             List<Dictionary<string, string>> msgArray) => new()
         {
-            ["model"]      = _model,
-            ["max_tokens"] = MaxTokens,
-            ["stream"]     = true,
-            ["messages"]   = msgArray
+            ["model"]       = _model,
+            ["max_tokens"]  = MaxTokens,
+            ["temperature"] = Temperature,
+            ["stream"]      = true,
+            ["messages"]    = msgArray
         };
 
         private static List<Dictionary<string, string>> BuildMessages(IReadOnlyList<ChatMessage> messages)
