@@ -136,16 +136,21 @@
             <TextBox x:Name="LoginEmailBox"
                      Style="{StaticResource AuthDarkInput}"
                      Text="{Binding LoginEmail, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     TabIndex="0"
+                     PreviewKeyDown="OnLoginEmailKeyDown"
                      Margin="0,0,0,12"/>
 
             <TextBlock Text="Password" FontSize="11" Foreground="{StaticResource AuthMutedBrush}" Margin="0,0,0,4"/>
             <PasswordBox x:Name="LoginPasswordBox"
                          Style="{StaticResource AuthDarkPasswordBox}"
+                         TabIndex="1"
+                         PreviewKeyDown="OnLoginPasswordKeyDown"
                          Margin="0,0,0,20"/>
 
             <Button Content="Sign In"
                     Style="{StaticResource AuthPrimaryBtn}"
                     Padding="0,10" FontSize="13"
+                    TabIndex="2"
                     IsEnabled="{Binding IsAuthIdle}"
                     Click="OnLoginClick"
                     Margin="0,0,0,16"/>

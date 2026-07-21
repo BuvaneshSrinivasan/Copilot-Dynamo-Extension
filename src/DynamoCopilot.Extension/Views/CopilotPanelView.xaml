@@ -1417,8 +1417,8 @@
                                  Padding="10,8"
                                  FontSize="13"
                                  TextWrapping="Wrap"
-                                 AcceptsReturn="False"
-                                 MaxLines="5"
+                                 AcceptsReturn="True"
+                                 MaxLines="12"
                                  VerticalScrollBarVisibility="Auto"
                                  CaretBrush="{StaticResource AccentBrush}"
                                  PreviewKeyDown="OnInputKeyDown"
@@ -1436,7 +1436,9 @@
                                                         BorderThickness="{TemplateBinding BorderThickness}"
                                                         CornerRadius="6">
                                                     <ScrollViewer x:Name="PART_ContentHost"
-                                                                  Margin="{TemplateBinding Padding}"/>
+                                                                  Margin="{TemplateBinding Padding}"
+                                                                  VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"
+                                                                  HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"/>
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsFocused" Value="True">
